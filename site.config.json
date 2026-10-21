@@ -2,13 +2,13 @@
   "siteName": "Verdant Archive",
   "owner": "Karson Shin",
   "tagline": "All photos and videos taken by Karson Shin.",
-  "bio": "*This is where Karson's story goes.* Write it from the admin area (Settings → Bio). Markdown works: **bold**, *italics*, [links](https://example.com), lists and headings.",
+  "bio": "i’m a photographer drawn to capturing the little details, fleeting moments, and unique perspectives that make everyday life feel memorable. from travel and landscapes to street photography and candid moments, i use my camera to document the world as i see it. this is a collection of images, memories, and places worth remembering.",
   "portrait": "media/portrait.webp",
   "basePath": "/The-Verdant-Archive/",
   "watermark": {
     "widthPct": 12,
     "padding": 24,
-    "opacity": 0.85,
+    "opacity": 0.65,
     "luminanceThreshold": 128
   },
   "derivatives": {
