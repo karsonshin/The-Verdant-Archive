@@ -94,10 +94,10 @@ Your watermark: `assets/karson-shin-watermark-white.png` is the white-ink file y
 
 ```bash
 cd verdant-archive-originals
-node tools/ingest.mjs ~/Pictures/Iceland --album "Trips/Iceland" --tags sea,sky,ice --category Travel --push
+node tools/ingest.mjs ~/Pictures/Iceland --album "Trips/Iceland" --tags sea,sky,ice --category Travel
 ```
 
-Each file: reads metadata, reverse-geocodes GPS, builds derivatives into the public repo, copies the **untouched original** to the private repo (LFS if over 10 MB), updates `photos.json` and `manifest.json`, and commits to both repos. `--push` pushes both (originals first). Run `node tools/ingest.mjs --help` for everything.
+Each file: reads metadata, reverse-geocodes GPS, builds derivatives into the public repo, copies the **untouched original** to the private repo (LFS if over 10 MB), updates `photos.json` and `manifest.json`, and commits to both repos. It then **pushes both repos automatically** (originals first; add `--no-push` to only commit), and GitHub Pages rebuilds from that push on its own. Run `node tools/ingest.mjs --help` for everything.
 
 ### B. Admin UI (drag and drop, edit text, publish)
 
@@ -106,7 +106,7 @@ cd verdant-archive-originals
 npm run admin          # http://127.0.0.1:4321   (add  -- --port 5000  to change)
 ```
 
-Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and **Publish** (commits and pushes both repos). Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
+Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and a Publish tab that is now only a manual retry. **Everything you save publishes itself:** uploads, edits, hide/delete, albums, categories, bio and settings are committed and pushed in the background, and a status bar shows "Publishing…" then "Published" (or the error, with a Retry button). Pages updates about a minute after the push. Set `"autoPublish": false` in `verdant-archive-originals/verdant.config.json` if you ever want manual control. Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
 
 The admin binds to `127.0.0.1` only, rejects foreign `Host` headers, and requires a custom header on every write, so a web page you visit can't drive it. It is never deployed (its code lives in the git-ignored private repo folder).
 

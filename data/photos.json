@@ -4,6 +4,6 @@
 {"id":"sample-album","name":"Sample Album","description":"Placeholder entries so the site renders before you add photos. Remove them with `node tools/ingest.mjs --remove-samples`.","parent":null,"cover":"sample-01"}
 ],
 "items": [
-{"id":"0d6e94496a5b","type":"photo","file":"THETHIRDSHOT.png","title":"","caption":"","tags":[],"category":null,"albums":[],"hidden":false,"added":"2026-10-21T18:06:08.826Z","taken":{"local":"2026-06-10T22:36:35","tz":null,"utc":null,"source":"file"},"gps":null,"place":null,"camera":{"make":null,"model":null,"lens":null},"exif":{"focal":null,"aperture":null,"shutter":null,"iso":null},"w":1254,"h":1254,"orientation":1,"bytes":1127086,"files":["download.jpg","large.webp","medium.webp","thumb.webp"]}
+{"id":"0d6e94496a5b","type":"photo","file":"THETHIRDSHOT.png","title":"Third shot LOGO","caption":"Third shot LOGOOOO","tags":[],"category":null,"albums":[],"hidden":false,"added":"2026-10-21T18:06:08.826Z","taken":{"local":"2026-06-10T22:36:35","tz":null,"utc":null,"source":"file"},"gps":null,"place":null,"camera":{"make":null,"model":null,"lens":null},"exif":{"focal":null,"aperture":null,"shutter":null,"iso":null},"w":1254,"h":1254,"orientation":1,"bytes":1127086,"files":["download.jpg","large.webp","medium.webp","thumb.webp"]}
 ]
 }
