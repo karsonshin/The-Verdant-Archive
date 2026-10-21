@@ -18,14 +18,9 @@
       "watermark": false
     },
     "medium": {
-      "size": 1600,
-      "quality": 78,
-      "watermark": true
-    },
-    "large": {
-      "size": 2560,
+      "size": 1080,
       "quality": 80,
-      "watermark": true
+      "watermark": false
     },
     "download": {
       "size": 1080,
@@ -42,5 +37,50 @@
   "geocode": {
     "enabled": true,
     "userAgent": "verdant-archive-ingest/1.0 (personal gallery)"
+  },
+  "contact": "",
+  "skills": [
+    {
+      "title": "Front-end development",
+      "blurb": "Fast, accessible interfaces in plain HTML, CSS and JavaScript, built without frameworks or build steps.",
+      "tags": [
+        "HTML",
+        "CSS",
+        "JavaScript",
+        "Accessibility"
+      ]
+    },
+    {
+      "title": "UI & visual design",
+      "blurb": "Layout, typography and colour systems that stay out of the way of the work.",
+      "tags": [
+        "Layout",
+        "Typography",
+        "Color",
+        "Motion"
+      ]
+    },
+    {
+      "title": "Photography",
+      "blurb": "Travel, landscape and street work, shot and edited by hand.",
+      "tags": [
+        "Travel",
+        "Landscape",
+        "Street"
+      ]
+    },
+    {
+      "title": "Tooling & automation",
+      "blurb": "Pipelines that do the boring parts: image processing, video encoding and deploys.",
+      "tags": [
+        "Node.js",
+        "ffmpeg",
+        "GitHub Actions"
+      ]
+    }
+  ],
+  "social": {
+    "supabaseUrl": "",
+    "supabaseAnonKey": ""
   }
 }
