@@ -1,7 +1,6 @@
 {
 "categories": ["Landscape","Street","Portrait","Travel","Nature","Sports"],
 "albums": [
-{"id":"sample-album","name":"Sample Album","description":"Placeholder entries so the site renders before you add photos. Remove them with `node tools/ingest.mjs --remove-samples`.","parent":null,"cover":null},
 {"id":"turkiye","name":"Türkiye","description":"Trip to Türkiye 2026","parent":null,"cover":null}
 ],
 "items": [
