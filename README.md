@@ -36,7 +36,9 @@ The ingest tooling lives in the private repo because both the local CLI and the 
 | ffmpeg (with `libx264` and `libwebp`) | video transcodes, previews | `ffmpeg -version` |
 | git and **git-lfs** | two repos, big originals | `git lfs version`, then run `git lfs install` once |
 
-Windows: `winget install Gyan.FFmpeg Git.Git GitHub.GitLFS OpenJS.NodeJS.LTS`. macOS: `brew install ffmpeg git-lfs node`.
+Windows: `winget install Gyan.FFmpeg Git.Git GitHub.GitLFS OpenJS.NodeJS.LTS`. macOS: `brew install ffmpeg git-lfs node`. Ubuntu/WSL: `sudo apt install ffmpeg git-lfs`.
+
+If a video upload fails with `spawn ffprobe EACCES` (common in WSL, where PATH mixes Linux and Windows folders) or `ENOENT`, the tool could not run ffmpeg/ffprobe. It already tries your `FFMPEG`/`FFPROBE` environment variables, the plain name, and the `.exe` name, and its error message lists what it tried. Fix it by installing ffmpeg inside the same environment you run the admin in (in WSL: `sudo apt install ffmpeg`), or by setting `FFPROBE=/usr/bin/ffprobe FFMPEG=/usr/bin/ffmpeg` before `npm run admin`.
 
 ### 1. Create the two GitHub repos
 
