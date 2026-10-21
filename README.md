@@ -108,6 +108,10 @@ npm run admin          # http://127.0.0.1:4321   (add  -- --port 5000  to change
 
 Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and a Publish tab that is now only a manual retry. **Everything you save publishes itself:** uploads, edits, hide/delete, albums, categories, bio and settings are committed and pushed in the background, and a status bar shows "Publishing…" then "Published" (or the error, with a Retry button). Pages updates about a minute after the push. Set `"autoPublish": false` in `verdant-archive-originals/verdant.config.json` if you ever want manual control. Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
 
+**Select mode:** in Library, click **Select** to pick many photos (click, or Shift-click for a range, or "Select all shown"), then change them all at once: add to or remove from an album (or create a new one), add or remove tags, set or clear a category, hide or unhide, mark or unmark as fan favorite.
+
+**Nothing to forget to save:** every edit in the admin (photo details, tags, albums, categories, gear, settings) saves itself about a second after you stop typing and is published a couple of seconds later; the Save buttons just do it immediately. A status pill in the header shows "Unsaved changes…", "Saving…" or "All changes saved", closing the tab flushes anything pending, and stopping the admin publishes anything still waiting.
+
 The admin binds to `127.0.0.1` only, rejects foreign `Host` headers, and requires a custom header on every write, so a web page you visit can't drive it. It is never deployed (its code lives in the git-ignored private repo folder).
 
 ### C. Drop files on GitHub.com
@@ -128,11 +132,12 @@ Actions → **Ingest inbox → Run workflow → regenerate** rebuilds every deri
 |---|---|---|---|
 | `thumb.webp` | 400 px | WebP q72 | no |
 | `medium.webp` | 1080 px | WebP q80 | no |
+| `full.webp` | the photo's own resolution | WebP q90 | no |
 | `download.jpg` | 1080 px | JPEG q88 | **yes, and only here** |
 
 Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.webp` poster, `thumb.webp`, and an animated `preview.webp`; the MP4s have the watermark burned in. All public derivatives have metadata (including GPS) stripped.
 
-**Decision: no watermark while viewing; the watermark appears only on the file a visitor saves.** To keep your rule that unwatermarked large versions are never public, everything shown on the site is capped at 1080 px on the longest edge, and only `download.jpg` (the Download button) carries the watermark. The trade-off is that the viewer zooms to 1080 px, not 2560 px. You can raise `derivatives.medium.size` in `site.config.json` (then run `--regenerate`), but anything unwatermarked above 1080 px is then public and savable. Photos ingested earlier are rebuilt to the new rules by `node tools/ingest.mjs --regenerate`, which also deletes any old watermarked `large.webp`.
+**Decision: no watermark while viewing; the watermark appears only on the file a visitor saves.** Viewers zoom all the way into `full.webp`, the photo at its own pixel dimensions (never upscaled, metadata and GPS stripped, re-encoded, not your original file), and the Download button gives `download.jpg`, a 1080 px copy with the watermark. **The trade-off you chose:** anyone can also save `full.webp` from their browser, unwatermarked, and each photo costs roughly 3 to 12 MB of the public repo (GitHub Pages sites should stay under about 1 GB, so roughly 100 to 300 photos). To limit either, set `derivatives.full.size` in `site.config.json` to a cap such as `2560` (or `watermark: true` to stamp it), then run `node tools/ingest.mjs --regenerate`. A `full.webp` that would exceed 80 MB is re-encoded at lower quality so it can never hit GitHub's 100 MB file limit.
 
 **"Intelligent" storage:** responsive `srcset` (the browser picks the smallest sharp file; the grid tolerates ~35% softness so retina screens don't pull 1600 px files for 300 px tiles), the lightbox swaps thumb → medium → large only as zoom demands, dedupe by SHA-256 (also catches the same file under a new name), derivatives that already exist are skipped (`--force` or `--regenerate` rebuilds), and originals never enter this repo. GitHub itself rejects any file over 100 MB, and ingest never writes anything but derivatives into this repo.
 
@@ -159,6 +164,12 @@ Per item, stored in `data/photos.json` (paths and metadata only, no base64, one 
 
 
 Justified grid (stored dimensions reserve space: no layout shift), lazy rows, dark/light following the system with a manual toggle, filters (category, tag, album, year, month, location, camera), sorting (newest, oldest, file name), search over file names, titles, captions, tags, places, albums, cameras and dates (`2024`, `May 2024`, `2024-05-12`), plus Albums (one level of nesting), Timeline, Places (Leaflet + OpenStreetMap map) and Gear pages (Gear is the list you maintain in the admin's Gear tab, plus cameras and lenses found in your photos' EXIF data), and an About page with your Markdown bio.
+
+**Viewer zoom:** mouse wheel, double-click or double-tap, pinch, and `Z` all zoom, up to 1.5 screen pixels per photo pixel on the full-resolution file; drag to pan. The sharpest file the screen needs is loaded automatically (a small "Loading full quality…" note shows while it arrives).
+
+**Timeline:** every photo and video on one continuous line that snakes left to right, turns, then right to left, with month markers and a switch for newest or oldest first. Click any photo to open it.
+
+**Gear:** cameras are detected automatically from your photos' EXIF data, and each gets its own section with the photos it took. Add lenses, accessories or notes (use a camera's name to attach notes to it) in the admin's Gear tab.
 
 **Viewer keys:** `←/→` navigate, `Esc` close, `Z` zoom, `I` info, wheel / pinch / double-tap to zoom, drag to pan, swipe to navigate. **Video:** `Space` play/pause, `←/→` seek 5 s (so use `Shift+←/→` or the arrows on screen to move between items), `M` mute, `F` fullscreen, `↑/↓` are native on the volume slider. Grid videos play muted on hover (desktop) or show the animated preview (touch).
 

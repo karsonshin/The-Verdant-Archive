@@ -293,19 +293,75 @@ function pageAlbum(id) {
     items.length ? grid(items, base) : empty('This album is empty.'));
 }
 
-function pageTimeline() {
-  setList(ALL.slice().sort(SORTS.newest), '#/timeline');
-  const byYear = new Map();
-  for (const i of ALL) { const y = byYear.get(i.year) || new Map(); y.set(i.month, [...(y.get(i.month) || []), i]); byYear.set(i.year, y); }
-  const thumb = (i) => h('img', { src: mediaUrl(i, 'thumb.webp'), alt: '', loading: 'lazy', draggable: 'false' });
-  return h('div', { class: 'page' }, pageHead('Timeline', 'Year by year, month by month.'),
-    [...byYear].sort((a, b) => b[0] - a[0]).map(([y, months]) => {
-      const total = [...months.values()].reduce((n, l) => n + l.length, 0);
-      return h('section', { class: 'year' }, h('h2', {}, h('a', { href: link('gallery', { year: y }) }, y), h('span', { class: 'muted' }, ` ${countLabel(total, 'item')}`)),
-        h('div', { class: 'months' }, [...months].sort((a, b) => b[0] - a[0]).map(([m, list]) =>
-          h('a', { class: 'month', href: link('gallery', { year: y, month: m }) }, h('div', { class: 'strip' }, list.slice().sort(SORTS.newest).slice(0, 3).map(thumb)), h('strong', {}, monthName(m)), h('span', { class: 'muted' }, countLabel(list.length, 'item'))))));
-    }), ALL.length ? null : empty());
+/** One continuous, winding line of every photo and video: left to right, a turn, right to left, and so on. */
+function pageTimeline(q) {
+  const order = q.get('order') === 'oldest' ? 'oldest' : 'newest';
+  const list = ALL.slice().sort(order === 'oldest' ? SORTS.oldest : SORTS.newest);
+  const base = order === 'oldest' ? '#/timeline?order=oldest' : '#/timeline';
+  setList(list, base);
+  const NS = 'http://www.w3.org/2000/svg';
+  const stage = h('div', { class: 'snake', role: 'list', 'aria-label': 'Timeline of photos and videos' });
+  const sw = (key, label) => h('a', { class: 'chip', href: key === 'newest' ? '#/timeline' : '#/timeline?order=oldest', 'aria-pressed': String(order === key) }, label);
+  let drew = false;
+
+  function layout() {
+    const W = stage.clientWidth;
+    if (!W || !list.length) return;
+    const narrow = W < 520, s = narrow ? 64 : W < 900 ? 92 : 116, g = narrow ? 18 : 26, M = narrow ? 8 : 24;
+    const TURN = 56, step = s + g;                       // room each end for the line to loop round
+    const n = Math.max(2, Math.floor((W - 2 * (M + TURN) - s) / step) + 1);
+    const rows = Math.ceil(list.length / n), rowH = s + 88, top = 56;
+    const xa = W / 2 - ((n - 1) * step) / 2, xb = xa + (n - 1) * step;
+    const yc = (r) => top + r * rowH + s / 2;
+    const xAt = (r, k) => (r % 2 === 0 ? xa + k * step : xb - k * step);
+    const e = s / 2 + 18, bulge = 38;
+
+    // the line
+    const lastRow = rows - 1, lastK = (list.length - 1) % n;
+    let d = `M ${xa - 30} ${yc(0)}`;
+    for (let r = 0; r < rows; r++) {
+      const dir = r % 2 === 0 ? 1 : -1, y = yc(r);
+      if (r === lastRow) { d += ` L ${xAt(r, lastK) + dir * 30} ${y}`; break; }
+      const xe = dir > 0 ? xb + e : xa - e, y2 = yc(r + 1);
+      d += ` L ${xe} ${y} C ${xe + dir * bulge} ${y} ${xe + dir * bulge} ${y2} ${xe} ${y2}`;
+    }
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'snake-line' + (drew ? '' : ' draw')); svg.setAttribute('width', W); svg.setAttribute('height', top + rows * rowH); svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); path.setAttribute('pathLength', '1'); svg.append(path);
+    drew = true;
+
+    // the photos and month markers
+    const nodes = [svg];
+    let prev = null, labelX = -1e9, labelRow = -1;
+    list.forEach((it, i) => {
+      const r = Math.floor(i / n), k = i % n, x = xAt(r, k), y = yc(r);
+      const key = it.year * 100 + it.month;
+      if (key !== prev) {
+        if (r !== labelRow || Math.abs(x - labelX) > 96) {
+          const first = prev === null || Math.floor(prev / 100) !== it.year;
+          nodes.push(h('div', { class: 'snake-label', style: `left:${x - s / 2}px;top:${y - s / 2 - 30}px` }, monthName(it.month, 'short'), first ? h('b', {}, ' ' + it.year) : null));
+          labelX = x; labelRow = r;
+        }
+        prev = key;
+      }
+      const a = h('a', { class: 'snake-photo', role: 'listitem', href: withV(base, it.id), style: `left:${x - s / 2}px;top:${y - s / 2}px;width:${s}px;height:${s}px`, title: [it.title, it.taken?.local && fmtDay(it)].filter(Boolean).join(' · ') || it.file, 'aria-label': (it.title || it.file) + (it.taken?.local ? ', ' + fmtDay(it) : '') },
+        h('img', { src: mediaUrl(it, 'thumb.webp'), srcset: `${mediaUrl(it, 'thumb.webp')} ${natW(it, 'thumb')}w, ${mediaUrl(it, 'medium.webp')} ${natW(it, 'medium')}w`, sizes: `${s}px`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
+      if (it.type === 'video') a.append(h('span', { class: 'badge', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>' }));
+      a.addEventListener('contextmenu', (ev) => ev.preventDefault());
+      a.addEventListener('click', (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button) return; ev.preventDefault(); nav(a.getAttribute('href'), { lb: true }); });
+      nodes.push(a);
+    });
+    stage.style.height = top + rows * rowH + 24 + 'px';
+    stage.replaceChildren(...nodes);
+  }
+  new ResizeObserver(layout).observe(stage);
+  queueMicrotask(layout);
+  return h('div', { class: 'page' }, pageHead('Timeline', 'One long line, from the first shot to the latest. Click any photo to view it.'),
+    list.length ? h('div', { class: 'chips snake-order', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest first'), sw('oldest', 'Oldest first')) : null,
+    list.length ? stage : empty('The timeline starts with the first photo.'));
 }
+
+const fmtDay = (it) => wall(it.taken.local).toLocaleDateString(undefined, { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' });
 
 function placeGroups() {
   const g = new Map();
@@ -356,30 +412,31 @@ const GEAR_TYPES = ['Camera', 'Lens', 'Accessory', 'Software', 'Other'];
 const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : null);
 
 function pageGear() {
-  setList(ALL.slice().sort(SORTS.newest), '#/gear');
-  // cameras the photos' own EXIF data reveals
+  // Cameras are detected from the photos' own EXIF data; every camera gets a section with the photos it took.
   const seen = new Map();
   for (const i of ALL) if (i.cam) { const e = seen.get(i.cam) || { items: [], lenses: new Map() }; e.items.push(i); if (i.camera.lens) e.lenses.set(i.camera.lens, (e.lenses.get(i.camera.lens) || 0) + 1); seen.set(i.cam, e); }
   const listed = (CFG.gear || []).filter((g) => g.name);
-  const match = (name) => [...seen.keys()].find((k) => k.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(k.toLowerCase()));
-  const card = (g) => {
-    const cam = g.type === 'Camera' ? match(g.name) : null, url = safeUrl(g.link);
-    return h('article', { class: 'gear-card' },
-      h('h3', {}, g.name),
-      g.notes ? h('p', {}, g.notes) : null,
-      h('p', { class: 'gear-links' },
-        cam ? h('a', { href: link('gallery', { camera: cam }) }, `${countLabel(seen.get(cam).items.length, 'photo')} →`) : null,
-        url ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Details ↗') : null));
-  };
-  const groups = GEAR_TYPES.map((t) => [t, listed.filter((g) => (GEAR_TYPES.includes(g.type) ? g.type : 'Other') === t)]).filter(([, l]) => l.length);
+  const norm = (x) => x.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const same = (x, y) => { x = norm(x); y = norm(y); return x && y && (x.includes(y) || y.includes(x)); };
+  const cams = [...seen].sort((p, q) => q[1].items.length - p[1].items.length).map(([name, e]) => ({ name, ...e, items: e.items.slice().sort(SORTS.newest), info: listed.find((g) => g.type === 'Camera' && same(g.name, name)) }));
+  const extraCams = listed.filter((g) => g.type === 'Camera' && !cams.some((c) => c.info === g)); // listed by hand, no photos matched
+  const others = listed.filter((g) => g.type !== 'Camera');
+  const SHOWN = 12, base = '#/gear';
+  setList([...new Map(cams.flatMap((c) => c.items.slice(0, SHOWN)).map((i) => [i.id, i])).values()], base);
+  const links = (g) => (safeUrl(g?.link) ? h('a', { href: safeUrl(g.link), target: '_blank', rel: 'noopener' }, 'Details ↗') : null);
+  const card = (g) => h('article', { class: 'gear-card' }, h('h3', {}, g.name), g.notes ? h('p', {}, g.notes) : null, links(g) ? h('p', { class: 'gear-links' }, links(g)) : null);
   const plural = { Camera: 'Cameras', Lens: 'Lenses', Accessory: 'Accessories', Software: 'Software', Other: 'Other' };
-  return h('div', { class: 'page' }, pageHead('Gear', 'What I shoot with.'),
+  const groups = GEAR_TYPES.filter((t) => t !== 'Camera').map((t) => [t, others.filter((g) => (GEAR_TYPES.includes(g.type) ? g.type : 'Other') === t)]).filter(([, l]) => l.length);
+  return h('div', { class: 'page' }, pageHead('Gear', 'What I shoot with, and what each one made.'),
+    cams.map((c) => h('section', { class: 'gear-cam', 'aria-labelledby': 'cam-' + norm(c.name) },
+      h('div', { class: 'gear-cam-head' },
+        h('div', {}, h('h2', { id: 'cam-' + norm(c.name) }, c.name), c.info?.notes ? h('p', { class: 'muted' }, c.info.notes) : null,
+          c.lenses.size ? h('p', { class: 'lenses' }, 'Lenses: ' + [...c.lenses].map(([l, n]) => l + ' (' + n + ')').join(' · ')) : null),
+        h('div', { class: 'gear-cam-meta' }, h('span', { class: 'muted' }, countLabel(c.items.length, 'photo')), links(c.info), c.items.length > SHOWN ? h('a', { href: link('gallery', { camera: c.name }) }, 'See all ' + c.items.length + ' →') : null)),
+      grid(c.items.slice(0, SHOWN), base))),
+    extraCams.length ? h('section', { class: 'gear-group' }, h('h2', {}, cams.length ? 'More cameras' : 'Cameras'), h('div', { class: 'gear-grid' }, extraCams.map(card))) : null,
     groups.map(([t, l]) => h('section', { class: 'gear-group' }, h('h2', {}, plural[t]), h('div', { class: 'gear-grid' }, l.map(card)))),
-    seen.size ? h('section', { class: 'gear-group' }, h('h2', {}, listed.length ? 'Seen in my photos' : 'Cameras in my photos'),
-      h('div', { class: 'cams' }, [...seen].sort((a, b) => b[1].items.length - a[1].items.length).map(([name, e]) =>
-        h('a', { class: 'cam', href: link('gallery', { camera: name }) }, h('h3', {}, name), h('p', { class: 'muted' }, countLabel(e.items.length, 'item')),
-          e.lenses.size ? h('p', { class: 'lenses' }, [...e.lenses].map(([l, n]) => `${l} · ${n}`).join('  ·  ')) : null)))) : null,
-    !listed.length && !seen.size ? empty('No gear listed yet.') : null);
+    !listed.length && !cams.length ? empty('No gear yet. Cameras appear here automatically as you add photos.') : null);
 }
 
 function pageAbout() {
@@ -422,7 +479,7 @@ function route() {
     grids.clear();
     cleanup?.(); cleanup = null; // stop the previous page's animation loop
     document.body.classList.toggle('on-home', !seg[0]);
-    const page = ({ '': pageHome, gallery: () => pageGallery(q), albums: pageAlbums, album: () => pageAlbum(seg[1]), timeline: pageTimeline, places: pageMapped, gear: pageGear, cameras: pageGear, about: pageAbout }[seg[0] || ''] || pageNotFound)();
+    const page = ({ '': pageHome, gallery: () => pageGallery(q), albums: pageAlbums, album: () => pageAlbum(seg[1]), timeline: () => pageTimeline(q), places: pageMapped, gear: pageGear, cameras: pageGear, about: pageAbout }[seg[0] || ''] || pageNotFound)();
     app.replaceChildren(page);
     cur.base = base;
     layoutGrids();

@@ -22,6 +22,11 @@
       "quality": 80,
       "watermark": false
     },
+    "full": {
+      "size": 0,
+      "quality": 90,
+      "watermark": false
+    },
     "download": {
       "size": 1080,
       "quality": 88,
