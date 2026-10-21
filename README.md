@@ -9,16 +9,18 @@ This repo is the **public site**: a static site (plain HTML/CSS/JS, no build ste
             │
             ├─► verdant-archive-originals  (PRIVATE)   exact originals, manifest.json, Git LFS, all tooling
             │
-            └─► verdant-archive            (PUBLIC)    site/ + WebP/JPEG/MP4 derivatives + photos.json  ──► GitHub Pages
+            └─► The-Verdant-Archive        (PUBLIC)    the site itself at the repo root + derivatives + photos.json  ──► GitHub Pages
 ```
 
-The two repos live side by side on your machine:
+The repo root **is** the site (`index.html`, `css/`, `js/`, `data/photos.json`, `media/`, `site.config.json`), so GitHub Pages serves it straight from the `main` branch with no build step. The private tooling repo sits in a git-ignored sub-folder of it:
 
 ```
-Projects/
-  verdant-archive/             <- this repo (public)
-  verdant-archive-originals/   <- private repo; contains the ingest tool, admin UI, tests
+Projects/verdantArchive/                 <- the public repo (this one); Pages serves its root
+  index.html  css/  js/  data/  media/  site.config.json  .nojekyll
+  verdant-archive-originals/             <- the private repo, cloned here; git-ignored by this repo
 ```
+
+**Never remove `verdant-archive-originals/` from `.gitignore`**: that folder holds your originals and must only ever be pushed to the private repo.
 
 The ingest tooling lives in the private repo because both the local CLI and the GitHub Action run it from there, which is what guarantees identical results from either path. See that repo's README for the tool reference.
 
@@ -38,37 +40,38 @@ Windows: `winget install Gyan.FFmpeg Git.Git GitHub.GitLFS OpenJS.NodeJS.LTS`. m
 
 ### 1. Create the two GitHub repos
 
-1. **Public** repo named exactly `verdant-archive` (this one).
-2. **Private** repo named exactly `verdant-archive-originals`.
+1. **Public** repo `The-Verdant-Archive` (this folder).
+2. **Private** repo `The-Verdant-Archive-Storage`. Set it to private before ingesting any real photo.
 
-Push this folder to the first and the `verdant-archive-originals` folder to the second:
+The public repo is this folder; the private repo is the `verdant-archive-originals` folder inside it:
 
 ```bash
-cd verdant-archive
-git init -b main && git add -A && git commit -m "Verdant Archive"
-git remote add origin https://github.com/<you>/verdant-archive.git && git push -u origin main
+# public site (this folder)
+git remote add origin https://github.com/<you>/The-Verdant-Archive.git
+git push -u origin main
 
-cd ../verdant-archive-originals
+# private originals + tooling
+cd verdant-archive-originals
 git lfs install
-git init -b main && git add -A && git commit -m "Originals + tooling"
-git remote add origin https://github.com/<you>/verdant-archive-originals.git && git push -u origin main
+git remote add origin https://github.com/<you>/The-Verdant-Archive-Storage.git
+git push -u origin main
 npm ci
 ```
 
 ### 2. Turn on GitHub Pages
 
-Public repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**. The `Deploy to GitHub Pages` workflow publishes the `site/` folder on every push to `main`. Your site appears at `https://<you>.github.io/verdant-archive/`.
+Public repo → **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch: `main`, folder: `/ (root)` → Save**. Because `index.html` is at the repo root, that is all it takes; there is no workflow to run. Your site appears at `https://<you>.github.io/The-Verdant-Archive/` within a minute or two of each push. (`.nojekyll` in the root tells Pages to serve the files as-is instead of running Jekyll.)
 
-All URLs in the site are relative and routing uses `#/…` hashes, so it works unchanged at the project path **and** at a custom domain: add your domain under Settings → Pages (and a `site/CNAME` file containing it), then set `basePath` to `/` in Settings.
+All URLs in the site are relative and routing uses `#/…` hashes, so it works unchanged at the project path **and** at a custom domain: add your domain under Settings → Pages (and a `CNAME` file containing it), then set `basePath` to `/` in Settings.
 
 ### 3. (Only for the drop-files-on-GitHub.com path) a token for the cross-repo push
 
 The Action in the private repo needs permission to push to the public repo.
 
 1. GitHub → Settings → Developer settings → **Fine-grained personal access tokens → Generate new token**.
-2. Resource owner: you. Repository access: **Only select repositories → `verdant-archive`**. Permissions: **Contents: Read and write**. Set an expiry you'll remember.
+2. Resource owner: you. Repository access: **Only select repositories → `The-Verdant-Archive`**. Permissions: **Contents: Read and write**. Set an expiry you'll remember.
 3. In the **private** repo: Settings → Secrets and variables → Actions → **New repository secret** named `PUBLIC_REPO_TOKEN`, value = the token.
-4. If the public repo isn't named `<owner>/verdant-archive`, add a repository *variable* `PUBLIC_REPO` = `owner/name`.
+4. If the public repo isn't named `<owner>/The-Verdant-Archive`, add a repository *variable* `PUBLIC_REPO` = `owner/name`.
 
 The local CLI and admin use your normal git credentials; no token needed there.
 
@@ -105,7 +108,7 @@ npm run admin          # http://127.0.0.1:4321   (add  -- --port 5000  to change
 
 Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and **Publish** (commits and pushes both repos). Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
 
-The admin binds to `127.0.0.1` only, rejects foreign `Host` headers, and requires a custom header on every write, so a web page you visit can't drive it. It is never deployed (the Pages workflow publishes only `site/`).
+The admin binds to `127.0.0.1` only, rejects foreign `Host` headers, and requires a custom header on every write, so a web page you visit can't drive it. It is never deployed (its code lives in the git-ignored private repo folder).
 
 ### C. Drop files on GitHub.com
 
@@ -119,7 +122,7 @@ Actions → **Ingest inbox → Run workflow → regenerate** rebuilds every deri
 
 **Tier 1, originals (private repo).** `originals/<id>/<exact original file name>`, byte-for-byte, with all EXIF/GPS/IPTC/XMP intact; the copy is SHA-256 verified. `.gitattributes` marks `originals/**` as binary (no line-ending conversion, ever) and adds an LFS rule per original over 10 MB. `manifest.json` maps `id → { path, sha256, size, originalName }`. Nothing here is recompressed or stripped, and nothing is deleted unless you pass `--purge-original` (admin: a checkbox plus typing the item id).
 
-**Tier 2, display (public repo).** Per photo, under `site/media/<id>/`:
+**Tier 2, display (public repo).** Per photo, under `media/<id>/`:
 
 | File | Longest edge | Format | Watermark |
 |---|---|---|---|
@@ -132,7 +135,7 @@ Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.
 
 **Decision: watermark the large derivatives rather than cap them at 1080.** Viewers can zoom to the full 2560 px and stay sharp, and nothing unwatermarked above 400 px is public. Only `download.jpg` (or `v1080.mp4`) is offered for download, and the viewer links to nothing else.
 
-**"Intelligent" storage:** responsive `srcset` (the browser picks the smallest sharp file; the grid tolerates ~35% softness so retina screens don't pull 1600 px files for 300 px tiles), the lightbox swaps thumb → medium → large only as zoom demands, dedupe by SHA-256 (also catches the same file under a new name), derivatives that already exist are skipped (`--force` or `--regenerate` rebuilds), and originals never enter this repo. A guardrail step in the Pages workflow fails the deploy if any file over 30 MB shows up in `site/`.
+**"Intelligent" storage:** responsive `srcset` (the browser picks the smallest sharp file; the grid tolerates ~35% softness so retina screens don't pull 1600 px files for 300 px tiles), the lightbox swaps thumb → medium → large only as zoom demands, dedupe by SHA-256 (also catches the same file under a new name), derivatives that already exist are skipped (`--force` or `--regenerate` rebuilds), and originals never enter this repo. GitHub itself rejects any file over 100 MB, and ingest never writes anything but derivatives into this repo.
 
 **Watermark colour:** the mean luminance of exactly the box the mark will cover (bottom-right) is measured on the resized image; below 128 uses the white file, otherwise black. Size 12% of the image width, 24 px padding, 85% opacity (all configurable). For video the average over four frames decides the ink.
 
@@ -140,7 +143,7 @@ Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.
 
 ## Metadata
 
-Per item, stored in `site/data/photos.json` (paths and metadata only, no base64, one item per line so diffs read well): original file name, capture date/time/**time zone**, GPS, reverse-geocoded place (city, region, country), camera make/model, lens, focal length, aperture, shutter, ISO, dimensions, orientation, original size.
+Per item, stored in `data/photos.json` (paths and metadata only, no base64, one item per line so diffs read well): original file name, capture date/time/**time zone**, GPS, reverse-geocoded place (city, region, country), camera make/model, lens, focal length, aperture, shutter, ISO, dimensions, orientation, original size.
 
 - **Time zone**: `OffsetTimeOriginal` if the camera wrote it; otherwise derived from the GPS clock (local time minus GPS UTC); otherwise recorded as unknown. The Info panel shows the capture wall-clock time with its offset *and* your local time.
 - **Geocoding**: free OpenStreetMap Nominatim at ingest time (one request per second, results cached in `geocache.json` in ~1 km cells so reruns and CI agree). If it's unreachable the place stays blank and ingest continues.
@@ -156,7 +159,7 @@ Right-click-save and drag-out are disabled on images and video. That is a deterr
 
 ## Configuration
 
-`site/site.config.json` (editable by hand or in the admin): `siteName`, `owner`, `tagline` (the brand message; it styles the owner's name when it appears in it), `bio` (Markdown), `portrait`, `basePath`, `watermark {widthPct, padding, opacity, luminanceThreshold}`, `derivatives {thumb|medium|large|download: {size, quality, watermark}}` (download default 1080), `video {maxSeconds: 60, crf, previewSeconds}`, `gpsDecimals`, `geocode`. Categories and albums live in `photos.json` and are edited in the admin.
+`site.config.json` (editable by hand or in the admin): `siteName`, `owner`, `tagline` (the brand message; it styles the owner's name when it appears in it), `bio` (Markdown), `portrait`, `basePath`, `watermark {widthPct, padding, opacity, luminanceThreshold}`, `derivatives {thumb|medium|large|download: {size, quality, watermark}}` (download default 1080), `video {maxSeconds: 60, crf, previewSeconds}`, `gpsDecimals`, `geocode`. Categories and albums live in `photos.json` and are edited in the admin.
 
 Changing sizes, quality, or watermark affects new ingests; run `node tools/ingest.mjs --regenerate` (or the admin's button / the Action's `regenerate` input) to rebuild existing items.
 
