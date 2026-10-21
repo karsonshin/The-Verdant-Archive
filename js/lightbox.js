@@ -1,5 +1,6 @@
 import { h, $, fmtWall, fmtBytes, mediaUrl } from './util.js';
 import { createPlayer } from './player.js';
+import * as social from './social.js';
 
 const I = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICON = {
@@ -8,19 +9,21 @@ const ICON = {
   next: I('<path d="M9 5l7 7-7 7"/>'),
   info: I('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
   zoom: I('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.5-4.5M11 8.5v5M8.5 11h5"/>'),
-  down: I('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>')
+  down: I('<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'),
+  chat: I('<path d="M4 5h16v11H9l-5 4z"/>')
 };
 
-const SIZES = ['thumb', 'medium', 'large'];
 const natW = (it, cfg, k) => Math.round(it.w * Math.min(1, cfg.derivatives[k].size / Math.max(it.w, it.h)));
 const natH = (it, cfg, k) => Math.round(it.h * Math.min(1, cfg.derivatives[k].size / Math.max(it.w, it.h)));
+/** Viewing sizes this item really has on disk, smallest first (the watermarked download is never used for viewing). */
+const sizesOf = (it, cfg) => ['thumb', 'medium', 'large'].filter((k) => cfg.derivatives[k] && it.files?.includes(k + '.webp'));
 
 /**
  * Full-screen viewer. `ctx` = { cfg, list, albumName(id), navigate(id), close() }.
  * The URL (?v=id) is the single source of truth: the router calls show(id) whenever it changes.
  */
 export function createLightbox(ctx) {
-  let root, stage, img, infoEl, titleEl, counter, dlBtn, zoomBtn, player, item, idx = -1, opener;
+  let root, stage, img, infoEl, titleEl, counter, dlBtn, zoomBtn, player, item, idx = -1, opener, rateHost, chatBtn, tab = 'info', cCount = null;
   let s = 1, tx = 0, ty = 0, fw = 0, fh = 0, maxS = 1, cur = -1, token = 0, infoOpen = false;
   const ptrs = new Map();
   let pinch0 = null, drag0 = null, swipe0 = null, lastTap = { t: 0, x: 0, y: 0 };
@@ -34,8 +37,10 @@ export function createLightbox(ctx) {
     dlBtn = h('a', { class: 'lb-btn', 'aria-label': 'Download 1080 px watermarked copy', title: 'Download (1080 px, watermarked)', html: ICON.down });
     zoomBtn = h('button', { class: 'lb-btn', type: 'button', 'aria-label': 'Toggle zoom (Z)', title: 'Zoom (Z)', html: ICON.zoom, onclick: () => toggleZoom() });
     const infoBtn = h('button', { class: 'lb-btn', type: 'button', 'aria-label': 'Toggle info (I)', title: 'Info (I)', 'aria-controls': 'lb-info', 'aria-expanded': 'false', html: ICON.info, onclick: () => setInfo(!infoOpen) });
+    rateHost = h('div', { class: 'lb-rate' });
+    chatBtn = h('button', { class: 'lb-btn', type: 'button', 'aria-label': 'Comments', title: 'Comments', html: ICON.chat, hidden: !social.enabled(), onclick: () => { setInfo(true); setTab('comments'); } });
     root = h('div', { class: 'lb', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Viewer' },
-      h('div', { class: 'lb-top' }, titleEl, counter, zoomBtn, dlBtn, infoBtn, h('button', { class: 'lb-btn', type: 'button', 'aria-label': 'Close (Esc)', title: 'Close (Esc)', html: ICON.close, onclick: () => ctx.close() })),
+      h('div', { class: 'lb-top' }, titleEl, rateHost, counter, zoomBtn, dlBtn, chatBtn, infoBtn, h('button', { class: 'lb-btn', type: 'button', 'aria-label': 'Close (Esc)', title: 'Close (Esc)', html: ICON.close, onclick: () => ctx.close() })),
       stage,
       h('button', { class: 'lb-nav lb-prev', type: 'button', 'aria-label': 'Previous (←)', html: ICON.prev, onclick: () => go(-1) }),
       h('button', { class: 'lb-nav lb-next', type: 'button', 'aria-label': 'Next (→)', html: ICON.next, onclick: () => go(1) }),
@@ -70,11 +75,12 @@ export function createLightbox(ctx) {
   function layout(smooth) {
     const sw = stage.clientWidth, sh = stage.clientHeight;
     if (!sw || !sh || !item) return;
-    const lw = natW(item, ctx.cfg, 'large'), lh = natH(item, ctx.cfg, 'large');
+    const top = sizesOf(item, ctx.cfg).pop() || 'medium';
+    const lw = natW(item, ctx.cfg, top), lh = natH(item, ctx.cfg, top);
     const f = Math.min(sw / lw, sh / lh, 1);
     fw = Math.round(lw * f); fh = Math.round(lh * f);
     img.style.width = fw + 'px'; img.style.height = fh + 'px';
-    maxS = Math.max(1, lw / fw); // zoom stops where one screen pixel = one pixel of the large derivative
+    maxS = Math.max(1, lw / fw); // zoom stops where one screen pixel = one pixel of the biggest viewing derivative
     s = Math.min(s, maxS); clamp(); apply(smooth); quality();
   }
   function zoomAt(ns, cx, cy, smooth = true) {
@@ -139,8 +145,9 @@ export function createLightbox(ctx) {
   function quality() {
     if (item.type !== 'photo') return;
     const need = fw * s * Math.min(devicePixelRatio || 1, 2);
-    const pick = SIZES.find((k) => natW(item, ctx.cfg, k) >= need) || 'large';
-    const rank = SIZES.indexOf(pick);
+    const have = sizesOf(item, ctx.cfg);
+    const pick = have.find((k) => natW(item, ctx.cfg, k) >= need) || have[have.length - 1];
+    const rank = have.indexOf(pick);
     if (rank > cur) load(pick, rank);
   }
   function load(k, rank) {
@@ -167,7 +174,7 @@ export function createLightbox(ctx) {
     ] : null;
     const exposure = [ex.focal && `${ex.focal} mm`, ex.aperture && `f/${ex.aperture}`, ex.shutter && `${ex.shutter}${/s$/.test(ex.shutter) ? '' : ' s'}`, ex.iso && `ISO ${ex.iso}`].filter(Boolean).join(' · ');
     const albums = (it.albums || []).map(ctx.albumName).filter(Boolean).join(', ');
-    infoEl.replaceChildren(
+    const details = [
       h('h2', {}, it.title || it.file),
       it.caption ? h('p', { class: 'cap' }, it.caption) : null,
       h('dl', {},
@@ -178,8 +185,15 @@ export function createLightbox(ctx) {
         row('Dimensions', `${it.w} × ${it.h}${it.duration ? ` · ${Math.round(it.duration)} s` : ''}`),
         row('Original file', it.file), row('Original size', it.bytes ? fmtBytes(it.bytes) : null),
         row('Category', it.category), row('Albums', albums),
-        row('Tags', it.tags?.length ? it.tags.map((t) => h('a', { class: 'tag', href: `#/gallery?tag=${encodeURIComponent(t)}`, onclick: () => ctx.close(true) }, t)) : null)));
+        row('Tags', it.tags?.length ? it.tags.map((t) => h('a', { class: 'tag', href: `#/gallery?tag=${encodeURIComponent(t)}`, onclick: () => ctx.close(true) }, t)) : null))];
+    if (!social.enabled()) return infoEl.replaceChildren(...details);
+    const tabs = h('div', { class: 'lb-tabs', role: 'tablist' },
+      h('button', { type: 'button', role: 'tab', id: 'tab-info', 'aria-selected': String(tab === 'info'), onclick: () => setTab('info') }, 'Details'),
+      h('button', { type: 'button', role: 'tab', id: 'tab-comments', 'aria-selected': String(tab === 'comments'), onclick: () => setTab('comments') }, cCount == null ? 'Comments' : `Comments (${cCount})`));
+    const pane = tab === 'comments' ? social.commentsPanel(it.id, (n) => { cCount = n; const t = $('#tab-comments', infoEl); if (t) t.textContent = `Comments (${n})`; }) : h('div', {}, details);
+    infoEl.replaceChildren(tabs, pane);
   }
+  function setTab(t) { tab = t; cCount = null; if (item) renderInfo(); }
 
   // ---------- show / hide ----------
   function show(id) {
@@ -209,6 +223,9 @@ export function createLightbox(ctx) {
       img.src = mediaUrl(item, 'thumb.webp'); cur = 0; // already cached by the grid, so it paints instantly
       layout(false);
     }
+    tab = tab === 'comments' && social.enabled() ? 'comments' : 'info'; cCount = null;
+    rateHost.replaceChildren(); chatBtn.hidden = !social.enabled();
+    if (social.enabled()) rateHost.append(social.stars(item.id, { compact: true }).el);
     setInfo(infoOpen); renderInfo();
     preloadNeighbours();
     if (first) (player ? player.el : root.querySelector('.lb-btn[aria-label^="Close"]')).focus();

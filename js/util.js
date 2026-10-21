@@ -25,6 +25,7 @@ export function md(src = '') {
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[\s(])[*_]([^*_]+)[*_](?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
       .replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:|#|\/)[^)\s]*)\)/g, '<a href="$2" rel="noopener">$1</a>')
+      .replace(/(^|[\s(])([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g, '$1<a href="mailto:$2">$2</a>')
       .replace(/\n/g, '<br>');
   return src.replace(/\r/g, '').split(/\n{2,}/).map((b) => {
     b = b.trim();

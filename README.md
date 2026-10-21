@@ -126,18 +126,17 @@ Actions → **Ingest inbox → Run workflow → regenerate** rebuilds every deri
 
 | File | Longest edge | Format | Watermark |
 |---|---|---|---|
-| `thumb.webp` | 400 px | WebP q72 | no (too small to be worth taking) |
-| `medium.webp` | 1600 px | WebP q78 | **yes** |
-| `large.webp` | 2560 px | WebP q80 | **yes** |
-| `download.jpg` | 1080 px | JPEG q88 | **yes** |
+| `thumb.webp` | 400 px | WebP q72 | no |
+| `medium.webp` | 1080 px | WebP q80 | no |
+| `download.jpg` | 1080 px | JPEG q88 | **yes, and only here** |
 
-Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.webp` poster, `thumb.webp`, and an animated `preview.webp`; MP4s have the watermark burned in. All public derivatives have metadata (including GPS) stripped.
+Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.webp` poster, `thumb.webp`, and an animated `preview.webp`; the MP4s have the watermark burned in. All public derivatives have metadata (including GPS) stripped.
 
-**Decision: watermark the large derivatives rather than cap them at 1080.** Viewers can zoom to the full 2560 px and stay sharp, and nothing unwatermarked above 400 px is public. Only `download.jpg` (or `v1080.mp4`) is offered for download, and the viewer links to nothing else.
+**Decision: no watermark while viewing; the watermark appears only on the file a visitor saves.** To keep your rule that unwatermarked large versions are never public, everything shown on the site is capped at 1080 px on the longest edge, and only `download.jpg` (the Download button) carries the watermark. The trade-off is that the viewer zooms to 1080 px, not 2560 px. You can raise `derivatives.medium.size` in `site.config.json` (then run `--regenerate`), but anything unwatermarked above 1080 px is then public and savable. Photos ingested earlier are rebuilt to the new rules by `node tools/ingest.mjs --regenerate`, which also deletes any old watermarked `large.webp`.
 
 **"Intelligent" storage:** responsive `srcset` (the browser picks the smallest sharp file; the grid tolerates ~35% softness so retina screens don't pull 1600 px files for 300 px tiles), the lightbox swaps thumb → medium → large only as zoom demands, dedupe by SHA-256 (also catches the same file under a new name), derivatives that already exist are skipped (`--force` or `--regenerate` rebuilds), and originals never enter this repo. GitHub itself rejects any file over 100 MB, and ingest never writes anything but derivatives into this repo.
 
-**Watermark colour:** the mean luminance of exactly the box the mark will cover (bottom-right) is measured on the resized image; below 128 uses the white file, otherwise black. Size 12% of the image width, 24 px padding, 85% opacity (all configurable). For video the average over four frames decides the ink.
+**Watermark colour:** on the download, the mean luminance of exactly the box the mark will cover (bottom-right) is measured; below 128 uses the white file, otherwise black. Size 12% of the image width, 24 px padding, 85% opacity (all configurable). For video the average over four frames decides the ink.
 
 ---
 
@@ -151,15 +150,36 @@ Per item, stored in `data/photos.json` (paths and metadata only, no base64, one 
 
 ## Site features
 
-Justified grid (stored dimensions reserve space: no layout shift), lazy rows, dark/light following the system with a manual toggle, filters (category, tag, album, year, month, location, camera), sorting (newest, oldest, file name), search over file names, titles, captions, tags, places, albums, cameras and dates (`2024`, `May 2024`, `2024-05-12`), plus Albums (one level of nesting), Timeline, Places (Leaflet + OpenStreetMap map) and Cameras views, and an About page with your Markdown bio.
+**Landing page:** a dark full-screen stage with a slowly turning 3D ball of your photos (about one turn every 90 seconds). Drag it to spin it (it keeps its momentum, then eases back to the slow drift), click or tap any photo and the ball rotates it to the front and opens it large with its title, place, rating and previous/next arrows, and "Open full view" opens the full viewer. Arrow keys turn the ball and Enter focuses the photo facing you. The brand line sits beneath the ball, and below the stage are subject tiles, the latest work, albums and an About teaser. Photos you mark **Fan favorite** in the admin sit nearest the middle of the ball, then anything fans rated 4 stars or more, then the newest. The ball pauses while the viewer is open or scrolled off-screen, and holds still if your system asks for reduced motion (it stays draggable).
+
+**Footer contact:** Settings → "Footer contact" takes Markdown (an email address, links). It appears in the footer on every page; leave it empty to hide it.
+
+
+**Ratings and comments:** visitors can rate any photo or video 1 to 5 stars and leave timestamped comments with a name. See the next section.
+
+
+Justified grid (stored dimensions reserve space: no layout shift), lazy rows, dark/light following the system with a manual toggle, filters (category, tag, album, year, month, location, camera), sorting (newest, oldest, file name), search over file names, titles, captions, tags, places, albums, cameras and dates (`2024`, `May 2024`, `2024-05-12`), plus Albums (one level of nesting), Timeline, Places (Leaflet + OpenStreetMap map) and Gear pages (Gear is the list you maintain in the admin's Gear tab, plus cameras and lenses found in your photos' EXIF data), and an About page with your Markdown bio.
 
 **Viewer keys:** `←/→` navigate, `Esc` close, `Z` zoom, `I` info, wheel / pinch / double-tap to zoom, drag to pan, swipe to navigate. **Video:** `Space` play/pause, `←/→` seek 5 s (so use `Shift+←/→` or the arrows on screen to move between items), `M` mute, `F` fullscreen, `↑/↓` are native on the volume slider. Grid videos play muted on hover (desktop) or show the animated preview (touch).
 
 Right-click-save and drag-out are disabled on images and video. That is a deterrent, not a security measure: anything a browser can display can be saved. The real protection is that only watermarked, reduced files are public.
 
+## Ratings and comments (free Supabase project)
+
+GitHub Pages cannot store data, so ratings and comments live in a free [Supabase](https://supabase.com) project that the site talks to directly. Until you connect one the star bar, comments tab and fan ratings are simply hidden.
+
+1. Create a free project at supabase.com.
+2. SQL Editor → New query → paste the contents of [`supabase/setup.sql`](supabase/setup.sql) → Run. It creates the tables, row-level security and a voting function.
+3. Project Settings → API: copy the **Project URL** and the **anon public** key (it is designed to be public).
+4. In the admin: Settings → "Ratings & comments", paste both, Save. It publishes itself.
+
+What the setup enforces: visitors can only read comments, add comments (name up to 60 characters, text up to 1000), and vote through a function that allows one vote per browser and lets them change it. The comment time is set by the server. Visitors cannot edit or delete anything, and the voter ids are never exposed.
+
+Honest limits: this is a personal-site setup, not a hardened one. A determined person can script extra votes or spam comments (there is a hidden honeypot field and a 15-second per-browser delay, which stop casual bots only). To moderate, open the `comments` table in the Supabase dashboard and delete rows. Comments are shown as plain text, never as HTML.
+
 ## Configuration
 
-`site.config.json` (editable by hand or in the admin): `siteName`, `owner`, `tagline` (the brand message; it styles the owner's name when it appears in it), `bio` (Markdown), `portrait`, `basePath`, `watermark {widthPct, padding, opacity, luminanceThreshold}`, `derivatives {thumb|medium|large|download: {size, quality, watermark}}` (download default 1080), `video {maxSeconds: 60, crf, previewSeconds}`, `gpsDecimals`, `geocode`. Categories and albums live in `photos.json` and are edited in the admin.
+`site.config.json` (editable by hand or in the admin): `siteName`, `owner`, `tagline` (the brand message; it styles the owner's name when it appears in it), `bio` (Markdown), `portrait`, `contact` (Markdown, shown in the footer), `social {supabaseUrl, supabaseAnonKey}`, `basePath`, `watermark {widthPct, padding, opacity, luminanceThreshold}`, `derivatives {thumb|medium|download: {size, quality, watermark}}`, `video {maxSeconds: 60, crf, previewSeconds}`, `gpsDecimals`, `geocode`. Categories, albums and each photo's `featured` flag live in `photos.json` and are edited in the admin.
 
 Changing sizes, quality, or watermark affects new ingests; run `node tools/ingest.mjs --regenerate` (or the admin's button / the Action's `regenerate` input) to rebuild existing items.
 

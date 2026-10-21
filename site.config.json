@@ -2,7 +2,7 @@
   "siteName": "Verdant Archive",
   "owner": "Karson Shin",
   "tagline": "All photos and videos taken by Karson Shin.",
-  "bio": "i’m a photographer drawn to capturing the little details, fleeting moments, and unique perspectives that make everyday life feel memorable. from travel and landscapes to street photography and candid moments, i use my camera to document the world as i see it. this is a collection of images, memories, and places worth remembering.",
+  "bio": "Hello everyone! My name is **Karson** and I’m a photographer drawn to capturing the little details, fleeting moments, and unique perspectives that make everyday life feel memorable. From travel and landscapes to street photography and candid moments, I use my cameras to document the world through my lens. This is a collection of images, clips, memories, and pieces worth remembering. Thanks for visiting!",
   "portrait": "media/portrait.webp",
   "basePath": "/The-Verdant-Archive/",
   "watermark": {
@@ -39,46 +39,6 @@
     "userAgent": "verdant-archive-ingest/1.0 (personal gallery)"
   },
   "contact": "",
-  "skills": [
-    {
-      "title": "Front-end development",
-      "blurb": "Fast, accessible interfaces in plain HTML, CSS and JavaScript, built without frameworks or build steps.",
-      "tags": [
-        "HTML",
-        "CSS",
-        "JavaScript",
-        "Accessibility"
-      ]
-    },
-    {
-      "title": "UI & visual design",
-      "blurb": "Layout, typography and colour systems that stay out of the way of the work.",
-      "tags": [
-        "Layout",
-        "Typography",
-        "Color",
-        "Motion"
-      ]
-    },
-    {
-      "title": "Photography",
-      "blurb": "Travel, landscape and street work, shot and edited by hand.",
-      "tags": [
-        "Travel",
-        "Landscape",
-        "Street"
-      ]
-    },
-    {
-      "title": "Tooling & automation",
-      "blurb": "Pipelines that do the boring parts: image processing, video encoding and deploys.",
-      "tags": [
-        "Node.js",
-        "ffmpeg",
-        "GitHub Actions"
-      ]
-    }
-  ],
   "social": {
     "supabaseUrl": "",
     "supabaseAnonKey": ""
