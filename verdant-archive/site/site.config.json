@@ -1,0 +1,18 @@
+{
+  "siteName": "Verdant Archive",
+  "owner": "Karson Shin",
+  "tagline": "All photos and videos taken by Karson Shin.",
+  "bio": "*This is where Karson's story goes.* Write it from the admin area (Settings → Bio). Markdown works: **bold**, *italics*, [links](https://example.com), lists and headings.",
+  "portrait": null,
+  "basePath": "/The-Verdant-Archive/",
+  "watermark": { "widthPct": 12, "padding": 24, "opacity": 0.85, "luminanceThreshold": 128 },
+  "derivatives": {
+    "thumb": { "size": 400, "quality": 72, "watermark": false },
+    "medium": { "size": 1600, "quality": 78, "watermark": true },
+    "large": { "size": 2560, "quality": 80, "watermark": true },
+    "download": { "size": 1080, "quality": 88, "watermark": true }
+  },
+  "video": { "maxSeconds": 60, "crf": 23, "previewSeconds": 3 },
+  "gpsDecimals": 5,
+  "geocode": { "enabled": true, "userAgent": "verdant-archive-ingest/1.0 (personal gallery)" }
+}

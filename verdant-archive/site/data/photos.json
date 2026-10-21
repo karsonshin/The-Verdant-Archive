@@ -1,0 +1,9 @@
+{
+"categories": ["Landscape","Street","Portrait","Travel","Nature"],
+"albums": [
+{"id":"sample-album","name":"Sample Album","description":"Placeholder entries so the site renders before you add photos. Remove them with `node tools/ingest.mjs --remove-samples`.","parent":null,"cover":"sample-01"}
+],
+"items": [
+
+]
+}
