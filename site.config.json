@@ -43,7 +43,7 @@
     "enabled": true,
     "userAgent": "verdant-archive-ingest/1.0 (personal gallery)"
   },
-  "contact": "",
+  "contact": "karson.shin@outlook.com",
   "social": {
     "supabaseUrl": "",
     "supabaseAnonKey": ""
