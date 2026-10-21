@@ -103,7 +103,7 @@ Each file: reads metadata, reverse-geocodes GPS, builds derivatives into the pub
 
 ```bash
 cd verdant-archive-originals
-npm run admin          # http://127.0.0.1:4321   (add  -- --port 5000  to change)
+npm run admin          # http://127.0.0.1:4321 (also works from the project root, via a git-ignored package.json)   (add  -- --port 5000  to change)
 ```
 
 Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and a Publish tab that is now only a manual retry. **Everything you save publishes itself:** uploads, edits, hide/delete, albums, categories, bio and settings are committed and pushed in the background, and a status bar shows "Publishing…" then "Published" (or the error, with a Retry button). Pages updates about a minute after the push. Set `"autoPublish": false` in `verdant-archive-originals/verdant.config.json` if you ever want manual control. Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
