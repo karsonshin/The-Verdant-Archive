@@ -108,9 +108,11 @@ npm run admin          # http://127.0.0.1:4321   (add  -- --port 5000  to change
 
 Library (edit titles, captions, tags, categories, albums, hide/unhide, delete), Upload, Albums & categories (create, rename, reorder, nest one level, covers, descriptions), Settings (name, brand message, **bio in Markdown + portrait**, watermark, sizes, limits), and a Publish tab that is now only a manual retry. **Everything you save publishes itself:** uploads, edits, hide/delete, albums, categories, bio and settings are committed and pushed in the background, and a status bar shows "Publishing…" then "Published" (or the error, with a Retry button). Pages updates about a minute after the push. Set `"autoPublish": false` in `verdant-archive-originals/verdant.config.json` if you ever want manual control. Text and organization edits only touch `photos.json`/`site.config.json`; no image is regenerated. "Preview site" opens the site served at your real `basePath`.
 
-**Select mode:** in Library, click **Select** to pick many photos (click, or Shift-click for a range, or "Select all shown"), then change them all at once: add to or remove from an album (or create a new one), add or remove tags, set or clear a category, hide or unhide, mark or unmark as fan favorite.
+**Select mode:** in Library, click **Select** (or just start dragging) to pick many photos: click them, Shift-click for a range, drag a box across them (hold Ctrl or Shift to add to the selection), or "Select all shown", then change them all at once: add to or remove from an album (or create a new one), add or remove tags, set or clear a category, hide or unhide, mark or unmark as fan favorite.
 
 **Nothing to forget to save:** every edit in the admin (photo details, tags, albums, categories, gear, settings) saves itself about a second after you stop typing and is published a couple of seconds later; the Save buttons just do it immediately. A status pill in the header shows "Unsaved changes…", "Saving…" or "All changes saved", closing the tab flushes anything pending, and stopping the admin publishes anything still waiting.
+
+If the admin ever shows a red "admin server is out of date" banner (or a button says "no such endpoint"), the page on screen is newer than the program running behind it: stop it with Ctrl+C and run `npm run admin` again.
 
 The admin binds to `127.0.0.1` only, rejects foreign `Host` headers, and requires a custom header on every write, so a web page you visit can't drive it. It is never deployed (its code lives in the git-ignored private repo folder).
 
@@ -155,7 +157,7 @@ Per item, stored in `data/photos.json` (paths and metadata only, no base64, one 
 
 ## Site features
 
-**Landing page:** a dark full-screen stage with a slowly turning 3D ball of your photos (about one turn every 90 seconds). Drag it to spin it (it keeps its momentum, then eases back to the slow drift), click or tap any photo and the ball rotates it to the front and opens it large with its title, place, rating and previous/next arrows, and "Open full view" opens the full viewer. Arrow keys turn the ball and Enter focuses the photo facing you. The brand line sits beneath the ball, and below the stage are subject tiles, the latest work, albums and an About teaser. Photos you mark **Fan favorite** in the admin sit nearest the middle of the ball, then anything fans rated 4 stars or more, then the newest. The ball pauses while the viewer is open or scrolled off-screen, and holds still if your system asks for reduced motion (it stays draggable).
+**Landing page:** a dark full-screen stage with a slowly turning 3D ball of your photos (about one turn every 90 seconds). Drag it to spin it (it keeps its momentum, then eases back to the slow drift), click or tap any photo and the ball rotates it to the front and opens it large with its title, place, rating and previous/next arrows, and "Open full view" opens the full viewer. Arrow keys turn the ball and Enter focuses the photo facing you. The brand line sits beneath the ball, and below the stage are albums, the latest work, subject tiles and an About teaser. Photos you mark **Fan favorite** in the admin sit nearest the middle of the ball, then anything fans rated 4 stars or more, then the newest. The ball pauses while the viewer is open or scrolled off-screen, and holds still if your system asks for reduced motion (it stays draggable).
 
 **Footer contact:** Settings → "Footer contact" takes Markdown (an email address, links). It appears in the footer on every page; leave it empty to hide it.
 
@@ -167,9 +169,9 @@ Justified grid (stored dimensions reserve space: no layout shift), lazy rows, da
 
 **Viewer zoom:** mouse wheel, double-click or double-tap, pinch, and `Z` all zoom, up to 1.5 screen pixels per photo pixel on the full-resolution file; drag to pan. The sharpest file the screen needs is loaded automatically (a small "Loading full quality…" note shows while it arrives).
 
-**Timeline:** every photo and video on one continuous line that snakes left to right, turns, then right to left, with month markers and a switch for newest or oldest first. Click any photo to open it.
+**Timeline:** every photo and video in one gapless mosaic, like zooming out in Photos: tiles meet edge to edge, and the order snakes (left to right, then right to left) so each row continues where the last ended. Zoom with the + and − buttons, Ctrl+scroll or a pinch (tiles glide to their new places, and your zoom level is remembered); month markers label the tiles, and a floating date follows you as you scroll. Switch between newest and oldest first, and click any photo to open it.
 
-**Gear:** cameras are detected automatically from your photos' EXIF data, and each gets its own section with the photos it took. Add lenses, accessories or notes (use a camera's name to attach notes to it) in the admin's Gear tab.
+**Gear:** cameras are detected automatically from your photos' EXIF data. Each camera gets its own section showing one row of the photos it took, with "See all" to open the whole set in the gallery. Add lenses, accessories or notes (use a camera's name to attach notes to it) in the admin's Gear tab, where each item can also have a photo of the actual camera or lens (resized, converted to WebP and shown on the Gear page; photos you replace or remove are deleted from the repo).
 
 **Viewer keys:** `←/→` navigate, `Esc` close, `Z` zoom, `I` info, wheel / pinch / double-tap to zoom, drag to pan, swipe to navigate. **Video:** `Space` play/pause, `←/→` seek 5 s (so use `Shift+←/→` or the arrows on screen to move between items), `M` mute, `F` fullscreen, `↑/↓` are native on the volume slider. Grid videos play muted on hover (desktop) or show the animated preview (touch).
 

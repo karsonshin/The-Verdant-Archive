@@ -105,9 +105,9 @@ function tile(it, w, hgt, base, eager) {
 }
 
 const grids = new Set();
-function grid(items, base) {
+function grid(items, base, { maxRows = Infinity } = {}) {
   const el = h('div', { class: 'grid', role: 'list', 'aria-label': 'Photos and videos' });
-  el._items = items; el._base = base; grids.add(el);
+  el._items = items; el._base = base; el._maxRows = maxRows; grids.add(el);
   return el;
 }
 
@@ -121,7 +121,7 @@ function layoutGrids() {
     const narrow = W < 600;
     const gap = narrow ? 4 : 8;
     el.style.setProperty('--gap', gap + 'px');
-    const rows = justify(el._items, W, narrow ? 150 : W < 1000 ? 210 : 270, gap);
+    const rows = justify(el._items, W, narrow ? 150 : W < 1000 ? 210 : 270, gap).slice(0, el._maxRows);
     el.replaceChildren();
     let next = 0;
     const more = () => {
@@ -189,9 +189,8 @@ function pageHome() {
       h('span', { class: 'cat-name' }, h('strong', {}, c), h('small', {}, countLabel(items.length, 'item'))));
   };
 
-  const hint = h('p', { class: 'orb-hint' }, h('span', { class: 'orb-dot', 'aria-hidden': 'true' }), 'Drag to spin · select a photo');
   let stage;
-  const orb = order.length ? createOrb({ items: order, social, onFirstInteraction: () => hint.classList.add('gone'), onOpen: (it) => nav(withV('#/', it.id), { lb: true }) }) : null;
+  const orb = order.length ? createOrb({ items: order, social, onOpen: (it) => nav(withV('#/', it.id), { lb: true }) }) : null;
   if (orb) { cleanup = orb.destroy; stage = orb.el; }
   else stage = h('div', { class: 'orb-empty' }, h('p', {}, order.length ? 'This browser cannot draw the 3D photo ball. Everything is below and in the gallery.' : 'The archive is waiting for its first photo.'));
 
@@ -200,11 +199,11 @@ function pageHome() {
       h('p', { class: 'orb-count' }, [countLabel(photos, 'photo'), videos ? countLabel(videos, 'video') : null, places ? countLabel(places, 'place') : null].filter(Boolean).join('  ·  ')),
       h('div', { class: 'orb-copy' },
         h('h1', { class: 'brandline', tabindex: '-1', html: brandline() }),
-        h('div', { class: 'orb-links' }, h('a', { class: 'cta', href: '#/gallery' }, 'Browse the archive', h('span', { 'aria-hidden': 'true' }, ' →')), h('a', { class: 'ghost', href: '#/albums' }, 'Albums'))),
-      orb ? hint : null),
-    cats.length ? h('section', { class: 'band', 'aria-labelledby': 'cats-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'cats-h' }, 'Browse by subject'), h('a', { href: '#/gallery' }, 'All work →')), h('div', { class: 'cats' }, cats.map(catTile))) : null,
-    h('section', { class: 'band', 'aria-labelledby': 'recent' }, h('div', { class: 'band-head' }, h('h2', { id: 'recent' }, 'Latest'), h('a', { href: '#/gallery' }, 'See everything →')), latest.length ? grid(latest, '#/') : empty('The archive is waiting for its first photo.')),
+        h('div', { class: 'orb-links' }, h('a', { class: 'cta', href: '#/gallery' }, 'Browse Gallery', h('span', { 'aria-hidden': 'true' }, ' →')), h('a', { class: 'ghost', href: '#/albums' }, 'Albums'))),
+      ),
     tops.length ? h('section', { class: 'band' }, h('div', { class: 'band-head' }, h('h2', {}, 'Albums'), h('a', { href: '#/albums' }, 'All albums →')), h('div', { class: 'cards' }, tops.map(albumCard))) : null,
+    h('section', { class: 'band', 'aria-labelledby': 'recent' }, h('div', { class: 'band-head' }, h('h2', { id: 'recent' }, 'Latest'), h('a', { href: '#/gallery' }, 'See everything →')), latest.length ? grid(latest, '#/') : empty('The archive is waiting for its first photo.')),
+    cats.length ? h('section', { class: 'band', 'aria-labelledby': 'cats-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'cats-h' }, 'Browse by subject'), h('a', { href: '#/gallery' }, 'All work →')), h('div', { class: 'cats' }, cats.map(catTile))) : null,
     (excerpt || CFG.portrait) ? h('section', { class: 'band about-teaser' }, CFG.portrait ? h('img', { class: 'portrait', src: CFG.portrait, alt: `Portrait of ${CFG.owner}`, draggable: 'false' }) : null, h('div', {}, h('h2', {}, 'About Me'), h('p', {}, excerpt), h('a', { href: '#/about' }, 'Read more →'))) : null);
 }
 
@@ -293,71 +292,76 @@ function pageAlbum(id) {
     items.length ? grid(items, base) : empty('This album is empty.'));
 }
 
-/** One continuous, winding line of every photo and video: left to right, a turn, right to left, and so on. */
+/**
+ * Every photo and video in one gapless mosaic, like zooming out in Photos. The order still snakes (left to right, then right
+ * to left), so each row picks up exactly where the last one ended. Zoom with + / -, Ctrl+scroll or a pinch: tiles glide.
+ */
 function pageTimeline(q) {
   const order = q.get('order') === 'oldest' ? 'oldest' : 'newest';
   const list = ALL.slice().sort(order === 'oldest' ? SORTS.oldest : SORTS.newest);
   const base = order === 'oldest' ? '#/timeline?order=oldest' : '#/timeline';
   setList(list, base);
-  const NS = 'http://www.w3.org/2000/svg';
-  const stage = h('div', { class: 'snake', role: 'list', 'aria-label': 'Timeline of photos and videos' });
-  const sw = (key, label) => h('a', { class: 'chip', href: key === 'newest' ? '#/timeline' : '#/timeline?order=oldest', 'aria-pressed': String(order === key) }, label);
-  let drew = false;
+  const LEVELS = [34, 54, 82, 126, 190]; // tile size in px: from "years at a glance" to "big pictures"
+  const store = { get: () => { try { return +localStorage.getItem('va-flow'); } catch { return NaN; } }, set: (v) => { try { localStorage.setItem('va-flow', v); } catch { /* fine */ } } };
+  let level = Number.isFinite(store.get()) && localStorage.getItem('va-flow') !== null ? Math.min(4, Math.max(0, store.get())) : 2;
+  const stage = h('div', { class: 'flow', role: 'list', 'aria-label': 'Timeline of photos and videos' });
 
+  let prev = null;
+  const tiles = list.map((it) => {
+    const key = it.year * 100 + it.month, newMonth = key !== prev, newYear = prev === null || Math.floor(prev / 100) !== it.year;
+    prev = key;
+    const a = h('a', { class: 'flow-tile', role: 'listitem', href: withV(base, it.id), title: [it.title, it.taken?.local && fmtDay(it)].filter(Boolean).join(' · ') || it.file, 'aria-label': (it.title || it.file) + (it.taken?.local ? ', ' + fmtDay(it) : '') },
+      h('img', { src: mediaUrl(it, 'thumb.webp'), alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
+    if (newMonth) a.append(h('span', { class: 'flow-label' + (newYear ? ' yr' : '') }, monthName(it.month, 'short'), newYear ? h('b', {}, ' ' + it.year) : null));
+    if (it.type === 'video') a.append(h('span', { class: 'badge', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>' }));
+    a.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    a.addEventListener('click', (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button) return; ev.preventDefault(); nav(a.getAttribute('href'), { lb: true }); });
+    return a;
+  });
+  stage.append(...tiles);
+
+  let n = 1, rowH = 100;
   function layout() {
     const W = stage.clientWidth;
-    if (!W || !list.length) return;
-    const narrow = W < 520, s = narrow ? 64 : W < 900 ? 92 : 116, g = narrow ? 18 : 26, M = narrow ? 8 : 24;
-    const TURN = 56, step = s + g;                       // room each end for the line to loop round
-    const n = Math.max(2, Math.floor((W - 2 * (M + TURN) - s) / step) + 1);
-    const rows = Math.ceil(list.length / n), rowH = s + 88, top = 56;
-    const xa = W / 2 - ((n - 1) * step) / 2, xb = xa + (n - 1) * step;
-    const yc = (r) => top + r * rowH + s / 2;
-    const xAt = (r, k) => (r % 2 === 0 ? xa + k * step : xb - k * step);
-    const e = s / 2 + 18, bulge = 38;
-
-    // the line
-    const lastRow = rows - 1, lastK = (list.length - 1) % n;
-    let d = `M ${xa - 30} ${yc(0)}`;
-    for (let r = 0; r < rows; r++) {
-      const dir = r % 2 === 0 ? 1 : -1, y = yc(r);
-      if (r === lastRow) { d += ` L ${xAt(r, lastK) + dir * 30} ${y}`; break; }
-      const xe = dir > 0 ? xb + e : xa - e, y2 = yc(r + 1);
-      d += ` L ${xe} ${y} C ${xe + dir * bulge} ${y} ${xe + dir * bulge} ${y2} ${xe} ${y2}`;
-    }
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('class', 'snake-line' + (drew ? '' : ' draw')); svg.setAttribute('width', W); svg.setAttribute('height', top + rows * rowH); svg.setAttribute('aria-hidden', 'true');
-    const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); path.setAttribute('pathLength', '1'); svg.append(path);
-    drew = true;
-
-    // the photos and month markers
-    const nodes = [svg];
-    let prev = null, labelX = -1e9, labelRow = -1;
-    list.forEach((it, i) => {
-      const r = Math.floor(i / n), k = i % n, x = xAt(r, k), y = yc(r);
-      const key = it.year * 100 + it.month;
-      if (key !== prev) {
-        if (r !== labelRow || Math.abs(x - labelX) > 96) {
-          const first = prev === null || Math.floor(prev / 100) !== it.year;
-          nodes.push(h('div', { class: 'snake-label', style: `left:${x - s / 2}px;top:${y - s / 2 - 30}px` }, monthName(it.month, 'short'), first ? h('b', {}, ' ' + it.year) : null));
-          labelX = x; labelRow = r;
-        }
-        prev = key;
-      }
-      const a = h('a', { class: 'snake-photo', role: 'listitem', href: withV(base, it.id), style: `left:${x - s / 2}px;top:${y - s / 2}px;width:${s}px;height:${s}px`, title: [it.title, it.taken?.local && fmtDay(it)].filter(Boolean).join(' · ') || it.file, 'aria-label': (it.title || it.file) + (it.taken?.local ? ', ' + fmtDay(it) : '') },
-        h('img', { src: mediaUrl(it, 'thumb.webp'), srcset: `${mediaUrl(it, 'thumb.webp')} ${natW(it, 'thumb')}w, ${mediaUrl(it, 'medium.webp')} ${natW(it, 'medium')}w`, sizes: `${s}px`, alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
-      if (it.type === 'video') a.append(h('span', { class: 'badge', html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>' }));
-      a.addEventListener('contextmenu', (ev) => ev.preventDefault());
-      a.addEventListener('click', (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button) return; ev.preventDefault(); nav(a.getAttribute('href'), { lb: true }); });
-      nodes.push(a);
+    if (!W) return;
+    n = Math.max(2, Math.round(W / (LEVELS[level] * (W < 520 ? 0.75 : 1))));
+    const cx = (c) => Math.round((c * W) / n), s = W / n, ry = (r) => Math.round(r * s);
+    rowH = s;
+    tiles.forEach((a, i) => {
+      const r = Math.floor(i / n), c = i % n, col = r % 2 ? n - 1 - c : c; // odd rows run right to left
+      const st = a.style;
+      st.left = cx(col) + 'px'; st.width = cx(col + 1) - cx(col) + 'px'; st.top = ry(r) + 'px'; st.height = ry(r + 1) - ry(r) + 'px'; // integer edges: tiles meet exactly, no hairline gaps
     });
-    stage.style.height = top + rows * rowH + 24 + 'px';
-    stage.replaceChildren(...nodes);
+    stage.style.height = ry(Math.ceil(list.length / n)) + 'px';
+    stage.classList.toggle('dense', s < 60); // too small for month labels: years only
+    pillUpdate();
   }
-  new ResizeObserver(layout).observe(stage);
+  const pill = h('span', { class: 'flow-pill', 'aria-hidden': 'true' });
+  function pillUpdate() {
+    const top = stage.getBoundingClientRect().top, off = (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hdr')) || 64) + 70;
+    const r = Math.min(Math.max(Math.floor((off - top) / rowH), 0), Math.ceil(list.length / n) - 1), it = list[Math.min(r * n + (r % 2 ? n - 1 : 0), list.length - 1)];
+    pill.textContent = it?.taken?.local ? wall(it.taken.local).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'long', year: 'numeric' }) : '';
+  }
+  addEventListener('scroll', () => requestAnimationFrame(pillUpdate), { passive: true });
+  const zoom = (d) => { const v = Math.min(4, Math.max(0, level + d)); if (v === level) return; level = v; store.set(v); layout(); minus.disabled = level === 0; plus.disabled = level === 4; };
+  const minus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom out: more photos at once', title: 'Zoom out', onclick: () => zoom(-1) }, '−');
+  const plus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom in: bigger photos', title: 'Zoom in', onclick: () => zoom(1) }, '+');
+  minus.disabled = level === 0; plus.disabled = level === 4;
+
+  let lastWheel = 0;
+  stage.addEventListener('wheel', (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (Date.now() - lastWheel < 220) return; lastWheel = Date.now(); zoom(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  const ptr = new Map(); let pinch0 = 0;
+  const dist = () => { const [p, r] = [...ptr.values()]; return Math.hypot(p.x - r.x, p.y - r.y); };
+  stage.addEventListener('pointerdown', (e) => { ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2) pinch0 = dist(); });
+  stage.addEventListener('pointermove', (e) => { if (!ptr.has(e.pointerId)) return; ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2 && pinch0) { const ratio = dist() / pinch0; if (ratio > 1.3) { zoom(1); pinch0 = dist(); } else if (ratio < 0.77) { zoom(-1); pinch0 = dist(); } } });
+  const up = (e) => { ptr.delete(e.pointerId); if (ptr.size < 2) pinch0 = 0; };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+
+  const sw = (key, label) => h('a', { class: 'chip', href: key === 'newest' ? '#/timeline' : '#/timeline?order=oldest', 'aria-pressed': String(order === key) }, label);
+  new ResizeObserver(() => { layout(); requestAnimationFrame(() => stage.classList.add('ready')); }).observe(stage);
   queueMicrotask(layout);
-  return h('div', { class: 'page' }, pageHead('Timeline', 'One long line, from the first shot to the latest. Click any photo to view it.'),
-    list.length ? h('div', { class: 'chips snake-order', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest first'), sw('oldest', 'Oldest first')) : null,
+  return h('div', { class: 'page flow-page' }, pageHead('Timeline', 'Every photo, one continuous flow. Pinch, Ctrl+scroll or use + and − to zoom; click any photo to view it.'),
+    list.length ? h('div', { class: 'flow-bar' }, h('div', { class: 'chips', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest first'), sw('oldest', 'Oldest first')), pill, h('div', { class: 'flow-zoom', role: 'group', 'aria-label': 'Zoom' }, minus, plus)) : null,
     list.length ? stage : empty('The timeline starts with the first photo.'));
 }
 
@@ -421,19 +425,20 @@ function pageGear() {
   const cams = [...seen].sort((p, q) => q[1].items.length - p[1].items.length).map(([name, e]) => ({ name, ...e, items: e.items.slice().sort(SORTS.newest), info: listed.find((g) => g.type === 'Camera' && same(g.name, name)) }));
   const extraCams = listed.filter((g) => g.type === 'Camera' && !cams.some((c) => c.info === g)); // listed by hand, no photos matched
   const others = listed.filter((g) => g.type !== 'Camera');
-  const SHOWN = 12, base = '#/gear';
-  setList([...new Map(cams.flatMap((c) => c.items.slice(0, SHOWN)).map((i) => [i.id, i])).values()], base);
+  const base = '#/gear';
+  setList([...new Map(cams.flatMap((c) => c.items).map((i) => [i.id, i])).values()], base); // the viewer can step through all of a camera's photos
+  const gearImg = (g) => (/^media\/gear\/[0-9a-f]{10}\.webp$/.test(g?.image || '') ? h('img', { class: 'gear-img', src: g.image, alt: g.name, loading: 'lazy', draggable: 'false' }) : null);
   const links = (g) => (safeUrl(g?.link) ? h('a', { href: safeUrl(g.link), target: '_blank', rel: 'noopener' }, 'Details ↗') : null);
-  const card = (g) => h('article', { class: 'gear-card' }, h('h3', {}, g.name), g.notes ? h('p', {}, g.notes) : null, links(g) ? h('p', { class: 'gear-links' }, links(g)) : null);
+  const card = (g) => h('article', { class: 'gear-card' }, gearImg(g), h('h3', {}, g.name), g.notes ? h('p', {}, g.notes) : null, links(g) ? h('p', { class: 'gear-links' }, links(g)) : null);
   const plural = { Camera: 'Cameras', Lens: 'Lenses', Accessory: 'Accessories', Software: 'Software', Other: 'Other' };
   const groups = GEAR_TYPES.filter((t) => t !== 'Camera').map((t) => [t, others.filter((g) => (GEAR_TYPES.includes(g.type) ? g.type : 'Other') === t)]).filter(([, l]) => l.length);
   return h('div', { class: 'page' }, pageHead('Gear', 'What I shoot with, and what each one made.'),
     cams.map((c) => h('section', { class: 'gear-cam', 'aria-labelledby': 'cam-' + norm(c.name) },
       h('div', { class: 'gear-cam-head' },
-        h('div', {}, h('h2', { id: 'cam-' + norm(c.name) }, c.name), c.info?.notes ? h('p', { class: 'muted' }, c.info.notes) : null,
-          c.lenses.size ? h('p', { class: 'lenses' }, 'Lenses: ' + [...c.lenses].map(([l, n]) => l + ' (' + n + ')').join(' · ')) : null),
-        h('div', { class: 'gear-cam-meta' }, h('span', { class: 'muted' }, countLabel(c.items.length, 'photo')), links(c.info), c.items.length > SHOWN ? h('a', { href: link('gallery', { camera: c.name }) }, 'See all ' + c.items.length + ' →') : null)),
-      grid(c.items.slice(0, SHOWN), base))),
+        h('div', { class: 'gear-cam-id' }, gearImg(c.info), h('div', {}, h('h2', { id: 'cam-' + norm(c.name) }, c.name), c.info?.notes ? h('p', { class: 'muted' }, c.info.notes) : null,
+          c.lenses.size ? h('p', { class: 'lenses' }, 'Lenses: ' + [...c.lenses].map(([l, n]) => l + ' (' + n + ')').join(' · ')) : null)),
+        h('div', { class: 'gear-cam-meta' }, h('span', { class: 'muted' }, countLabel(c.items.length, 'photo')), links(c.info), h('a', { href: link('gallery', { camera: c.name }) }, 'See all ' + c.items.length + ' →'))),
+      grid(c.items, base, { maxRows: 1 }))), // a single row; "See all" opens the rest
     extraCams.length ? h('section', { class: 'gear-group' }, h('h2', {}, cams.length ? 'More cameras' : 'Cameras'), h('div', { class: 'gear-grid' }, extraCams.map(card))) : null,
     groups.map(([t, l]) => h('section', { class: 'gear-group' }, h('h2', {}, plural[t]), h('div', { class: 'gear-grid' }, l.map(card)))),
     !listed.length && !cams.length ? empty('No gear yet. Cameras appear here automatically as you add photos.') : null);
