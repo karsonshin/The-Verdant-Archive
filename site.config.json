@@ -42,5 +42,13 @@
   "social": {
     "supabaseUrl": "",
     "supabaseAnonKey": ""
-  }
+  },
+  "gear": [
+    {
+      "name": "Fujifilm X100VI",
+      "type": "Camera",
+      "notes": "",
+      "link": ""
+    }
+  ]
 }

@@ -338,3 +338,6 @@ header.site { transition: box-shadow .25s ease; } header.site.scrolled { box-sha
 .gear-card { padding: 1.2rem 1.3rem; border: 1px solid var(--line); border-radius: 8px; border-top: 3px solid var(--accent); }
 .gear-card h3 { font-size: 1.3rem; } .gear-card p { margin: .5rem 0 0; color: var(--muted); }
 .gear-links { display: flex; gap: 1rem; flex-wrap: wrap; } .gear-links a { color: var(--accent); font-weight: 600; font-size: .9rem; }
+
+.lb.loading-hq .lb-stage::after { content: 'Loading full quality…'; position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 6; padding: .4rem .9rem; border-radius: 4px; background: rgb(0 0 0 / .6); color: #fff; font-size: .82rem; font-weight: 600; pointer-events: none; animation: hq 1.2s ease-in-out infinite alternate; }
+@keyframes hq { from { opacity: .55; } to { opacity: 1; } }

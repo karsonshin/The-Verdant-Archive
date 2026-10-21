@@ -13,10 +13,12 @@ const ICON = {
   chat: I('<path d="M4 5h16v11H9l-5 4z"/>')
 };
 
-const natW = (it, cfg, k) => Math.round(it.w * Math.min(1, cfg.derivatives[k].size / Math.max(it.w, it.h)));
-const natH = (it, cfg, k) => Math.round(it.h * Math.min(1, cfg.derivatives[k].size / Math.max(it.w, it.h)));
+// size 0 in the config means "the photo's own resolution" (capped by WebP's 16383 px limit)
+const edge = (cfg, k) => cfg.derivatives[k].size || 16383;
+const natW = (it, cfg, k) => Math.round(it.w * Math.min(1, edge(cfg, k) / Math.max(it.w, it.h)));
+const natH = (it, cfg, k) => Math.round(it.h * Math.min(1, edge(cfg, k) / Math.max(it.w, it.h)));
 /** Viewing sizes this item really has on disk, smallest first (the watermarked download is never used for viewing). */
-const sizesOf = (it, cfg) => ['thumb', 'medium', 'large'].filter((k) => cfg.derivatives[k] && it.files?.includes(k + '.webp'));
+const sizesOf = (it, cfg) => ['thumb', 'medium', 'large', 'full'].filter((k) => cfg.derivatives[k] && it.files?.includes(k + '.webp'));
 
 /**
  * Full-screen viewer. `ctx` = { cfg, list, albumName(id), navigate(id), close() }.
@@ -80,7 +82,7 @@ export function createLightbox(ctx) {
     const f = Math.min(sw / lw, sh / lh, 1);
     fw = Math.round(lw * f); fh = Math.round(lh * f);
     img.style.width = fw + 'px'; img.style.height = fh + 'px';
-    maxS = Math.max(1, lw / fw); // zoom stops where one screen pixel = one pixel of the biggest viewing derivative
+    maxS = Math.max(3, (lw / fw) * 1.5); // all the way in: past 1:1 on the full-resolution file, and at least 3x for small images
     s = Math.min(s, maxS); clamp(); apply(smooth); quality();
   }
   function zoomAt(ns, cx, cy, smooth = true) {
@@ -144,7 +146,7 @@ export function createLightbox(ctx) {
   /** Smallest derivative that is sharp at the current zoom on this screen. */
   function quality() {
     if (item.type !== 'photo') return;
-    const need = fw * s * Math.min(devicePixelRatio || 1, 2);
+    const need = fw * s * Math.min(devicePixelRatio || 1, 3);
     const have = sizesOf(item, ctx.cfg);
     const pick = have.find((k) => natW(item, ctx.cfg, k) >= need) || have[have.length - 1];
     const rank = have.indexOf(pick);
@@ -152,8 +154,11 @@ export function createLightbox(ctx) {
   }
   function load(k, rank) {
     const my = token, src = mediaUrl(item, k + '.webp');
-    const pre = new Image();
-    pre.onload = () => { if (my === token && rank > cur) { img.src = src; cur = rank; } };
+    const pre = new Image(), big = k === 'full' || k === 'large';
+    if (big) root.classList.add('loading-hq');
+    const done = () => { if (my === token) root.classList.remove('loading-hq'); };
+    pre.onerror = done;
+    pre.onload = () => { done(); if (my === token && rank > cur) { img.src = src; cur = rank; } };
     pre.src = src;
   }
   function preloadNeighbours() {
@@ -207,7 +212,7 @@ export function createLightbox(ctx) {
     idx = i; item = ctx.list[i]; token++; cur = -1; s = 1; tx = ty = 0;
     titleEl.textContent = item.title || item.file;
     counter.textContent = `${i + 1} / ${ctx.list.length}`;
-    root.classList.toggle('is-video', item.type === 'video');
+    root.classList.toggle('is-video', item.type === 'video'); root.classList.remove('loading-hq');
     root.querySelector('.lb-prev').hidden = i === 0; root.querySelector('.lb-next').hidden = i === ctx.list.length - 1;
     const dl = item.type === 'video' ? 'v1080.mp4' : 'download.jpg';
     dlBtn.href = mediaUrl(item, dl);
