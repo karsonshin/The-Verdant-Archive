@@ -311,6 +311,72 @@ header.site { transition: box-shadow .25s ease; } header.site.scrolled { box-sha
 .ghost:hover { background: rgb(255 255 255 / .12); border-color: #fff; transform: translateY(-2px); }
 .orb-copy .brandline:has(.ext) { font-size: clamp(2.5rem, 5vw, 4.2rem); line-height: 1; }
 .orb-copy .brandline .ext { font-size: .68em; color: rgb(255 255 255 / .72); margin-left: .1em; }
+
+/* ---- hover the headline: the page floods with a pinboard of prints and the name rises into a title card (js/app.js headline()) */
+.orbhero .brandline { display: inline-block; pointer-events: auto; }
+.name-btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-block; white-space: nowrap; padding: .05em .12em .2em; margin: -.05em -.12em -.2em; border-radius: .1em; }
+.name-btn:focus-visible { outline: 2px solid #8fe0b2; outline-offset: .05em; }
+.flip { --ground: #0c1912; position: fixed; inset: 0; z-index: 9999; background: var(--ground); color: #000; overflow: hidden; clip-path: circle(0px at var(--cx, 50%) var(--cy, 50%)); transition: clip-path .55s cubic-bezier(.5, 0, .75, 0); }
+.flip.on { clip-path: circle(150vmax at var(--cx, 50%) var(--cy, 50%)); transition: clip-path .9s cubic-bezier(.16, 1, .3, 1); }
+.flip:focus { outline: none; }
+
+/* prints: each flies out from the name, drifts with the pointer at its own depth, lifts on hover, and can be dragged */
+/* the vine: stems grow from the left edge, leaves pop in as the growth reaches them, */
+.vine { position: absolute; inset: 0; z-index: 500; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.vine .grow { stroke-dasharray: var(--L); stroke-dashoffset: var(--L); }
+.vine:last-of-type { z-index: 6100; }
+.flip.filled .vine .grow { stroke-dashoffset: 0; transition: stroke-dashoffset 2.4s .35s cubic-bezier(.45, 0, .2, 1); }
+.vine .leaf { transform: scale(0); transform-origin: 0 0; }
+.flip.filled .vine .leaf { transform: scale(var(--sc)); transition: transform 1s var(--d) cubic-bezier(.16, 1, .3, 1); }
+/* stacking order inside the board (all z-index): prints under the vine 10-400, the vine 500, prints over the vine 600-900, dragged prints 1000+,
+   edge vignette 5000, plate 6000, plate sprigs 6100, name 6200, card 6300, close 6400 */
+.board { position: absolute; inset: 0; pointer-events: none; }
+.flip::before { content: ''; position: absolute; inset: 0; z-index: 5000; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 38%, rgb(0 0 0 / .5) 100%); }
+.print { pointer-events: auto; position: absolute; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; opacity: 0;
+  transform: translate(var(--ox), var(--oy)) rotate(calc(var(--r) + 55deg)) scale(.15); transition: opacity .2s ease, transform .3s ease; }
+.flip.filled .print { opacity: 1; transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(var(--r));
+  transition: transform 1.1s calc(.1s + var(--i) * 15ms) cubic-bezier(.16, 1, .3, 1), opacity .4s calc(var(--i) * 15ms) ease-out; }
+.flip.settled .print { transition: transform .35s cubic-bezier(.16, 1, .3, 1); }
+.flip.settled .print.drag, .print.drag { transition: none; cursor: grabbing; }
+.print-in { position: relative; background: #eeebe3; padding: 6px 6px 30px; border-radius: 2px; box-shadow: 0 5px 12px -4px rgb(0 0 0 / .5); transition: transform .3s cubic-bezier(.16, 1, .3, 1), box-shadow .3s ease; }
+.print.taped .print-in::before { content: ''; position: absolute; z-index: 1; top: -9px; left: 50%; width: 44%; height: 19px; transform: translateX(-50%) rotate(var(--tr)); background: rgb(244 232 178 / .82); box-shadow: 0 1px 3px rgb(0 0 0 / .18); pointer-events: none; }
+.print-in img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; background: #1c2a22; pointer-events: none; }
+.flip.settled .print:hover .print-in { transform: scale(1.07) rotate(calc(var(--r) * -.7)); box-shadow: 0 26px 40px -14px rgb(0 0 0 / .45), 0 3px 8px rgb(0 0 0 / .2); }
+.print.drag .print-in { transform: scale(1.1); box-shadow: 0 34px 50px -16px rgb(0 0 0 / .5), 0 4px 10px rgb(0 0 0 / .22); }
+
+/* plate, name and card */
+.flip-plate { z-index: 6000; position: absolute; border-radius: 3px; opacity: 0; transform: scale(.96); transition: opacity .2s ease, transform .2s ease;
+  background: radial-gradient(ellipse at 50% 28%, #bccdb3, #9db293 72%);
+  box-shadow: inset 0 0 40px rgb(30 70 45 / .28), 0 30px 60px -24px rgb(0 0 0 / .55), 0 3px 8px rgb(0 0 0 / .25); }
+.flip-plate::before, .flip-plate::after { content: ''; position: absolute; pointer-events: none; border-radius: 2px; } /* a double rule, like a herbarium label */
+.flip-plate::before { inset: 9px; border: 1.6px solid rgb(29 74 48 / .7); }
+.flip-plate::after { inset: 14px; border: 1px solid rgb(29 74 48 / .35); }
+.corner { position: absolute; width: 54px; height: 54px; pointer-events: none; }
+.corner.c-tl { top: 10px; left: 10px; } .corner.c-tr { top: 10px; right: 10px; transform: scaleX(-1); } .corner.c-bl { bottom: 10px; left: 10px; transform: scaleY(-1); } .corner.c-br { bottom: 10px; right: 10px; transform: scale(-1); }
+.flip-orn { display: block; width: min(11rem, 60%); height: auto; margin: 0 auto .9rem; }
+.flip.on .flip-plate { opacity: 1; transform: none; transition: opacity .5s .4s ease-out, transform .8s .4s cubic-bezier(.16, 1, .3, 1); }
+.flip-name { z-index: 6200; position: absolute; margin: 0; text-shadow: none; pointer-events: none; transform-origin: 50% 50%; transition: transform .55s cubic-bezier(.5, 0, .75, 0); }
+.flip.on .flip-name { transform: translate(var(--ex, 0px), var(--dy)) scale(var(--s)); transition: transform 1s .08s cubic-bezier(.16, 1, .3, 1); }
+.flip-w1, .flip-w2 { display: inline-block; transition: transform .45s cubic-bezier(.5, 0, .75, 0); }
+.flip.on .flip-w1 { transform: translateX(-.13em); transition: transform .9s .25s cubic-bezier(.16, 1, .3, 1); }
+.flip.on .flip-w2 { transform: translateX(.13em); transition: transform .9s .25s cubic-bezier(.16, 1, .3, 1); }
+.flip-ext { transition: opacity .3s ease; }
+.flip.on .flip-ext { opacity: 0; transition: opacity .35s .05s ease; } /* fades out; the name slides right by half its width (--ex) to end up centred, so no layout is animated */
+.flip-card { z-index: 6300; position: absolute; left: 50%; width: min(36rem, 90vw); text-align: center; opacity: 0; transform: translate(-50%, 14px); transition: opacity .2s ease, transform .2s ease; }
+.flip.on .flip-card { opacity: 1; transform: translate(-50%, 0); transition: opacity .6s .5s ease-out, transform .8s .5s cubic-bezier(.16, 1, .3, 1); }
+.flip-facts { margin: 0 0 1.3rem; font-size: 1.05rem; line-height: 1.45; color: #1b2a20; text-wrap: balance; }
+.flip-links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .6rem 1.4rem; }
+.flip-links a { color: #0f2a1b; font-weight: 600; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; text-decoration-thickness: 2px; transition: text-decoration-color .2s ease; }
+.flip-links a:hover { text-decoration-color: currentColor; }
+.flip-links .flip-cta { background: #123322; color: #eaf6ec; padding: .65rem 1.25rem; border-radius: 4px; text-decoration: none; margin-right: .4rem; }
+.flip-links .flip-cta:hover { background: #1d4a30; }
+.flip-close { all: unset; box-sizing: border-box; z-index: 6400; position: absolute; top: 1.1rem; right: 1.1rem; display: inline-flex; align-items: center; gap: .5rem; padding: .7rem 1.1rem .7rem .9rem; cursor: pointer; font-weight: 700; font-size: 1rem; line-height: 1; color: #fff; background: #000; border-radius: 999px; box-shadow: 0 0 0 3px #fff, 0 10px 24px -6px rgb(0 0 0 / .55); opacity: 0; transition: opacity .2s ease, transform .2s ease; }
+.flip-close svg { width: 1.05rem; height: 1.05rem; }
+.flip-close:hover { background: #222; transform: scale(1.04); }
+.flip.on .flip-close { opacity: 1; transition: opacity .5s .6s ease-out; }
+.flip a:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
+.flip-close:focus-visible { outline: 3px solid #8fe0b2; outline-offset: 5px; }
+@media (prefers-reduced-motion: reduce) { .vine .grow, .flip.filled .vine .grow, .vine .leaf, .flip.filled .vine .leaf { transition: none; } .flip, .flip.on, .print, .flip.filled .print, .flip.settled .print, .print-in, .flip-plate, .flip.on .flip-plate, .flip-name, .flip.on .flip-name, .flip-card, .flip.on .flip-card, .flip-close, .flip.on .flip-close, .flip-ext, .flip.on .flip-ext, .flip-w1, .flip-w2, .flip.on .flip-w1, .flip.on .flip-w2 { transition: none; } }
 .orb-links { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-top: 1.6rem; pointer-events: auto; }
 .orbhero .cta { background: #fff; color: #04110b; }
 .orb-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgb(255 255 255 / .6); }

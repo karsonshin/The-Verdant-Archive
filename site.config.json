@@ -6,9 +6,9 @@
   "portrait": "media/portrait.webp",
   "basePath": "/The-Verdant-Archive/",
   "watermark": {
-    "widthPct": 12,
+    "widthPct": 14,
     "padding": 24,
-    "opacity": 0.65,
+    "opacity": 0.75,
     "luminanceThreshold": 128
   },
   "derivatives": {
@@ -28,8 +28,8 @@
       "watermark": false
     },
     "download": {
-      "size": 1080,
-      "quality": 88,
+      "size": 0,
+      "quality": 95,
       "watermark": true
     }
   },

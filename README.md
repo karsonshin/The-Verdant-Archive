@@ -137,7 +137,7 @@ Actions → **Ingest inbox → Run workflow → regenerate** rebuilds every deri
 | `thumb.webp` | 400 px | WebP q72 | no |
 | `medium.webp` | 1080 px | WebP q80 | no |
 | `full.webp` | the photo's own resolution | WebP q90 | no |
-| `download.jpg` | 1080 px | JPEG q88 | **yes, and only here** |
+| `download.jpg` | full resolution | JPEG q95 | **yes, and only here** |
 
 Videos: `v1080.mp4` (+ `v720.mp4` when the source is bigger than 720p), `medium.webp` poster, `thumb.webp`, and an animated `preview.webp`; the MP4s have the watermark burned in. All public derivatives have metadata (including GPS) stripped.
 

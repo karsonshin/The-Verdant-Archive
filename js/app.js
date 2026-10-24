@@ -148,6 +148,208 @@ const brandline = () => {
   return f ? `<span class="by">${esc(f[1])}</span><span class="ext">${esc(f[2])}</span>` : esc(CFG.tagline).replace(esc(CFG.owner), `<span class="by">${esc(CFG.owner)}</span>`);
 };
 
+// The headline is a button. Hovering it (or pressing Enter) floods the page with a pinboard of your photos: the name rises to the middle in
+// black on a white plate with a title card under it, and prints from the archive fly out around it. Prints drift with the pointer, lift on
+// hover, can be dragged, and open in the viewer when clicked. It stays until Esc, a click on the empty board, Close, or a link.
+// Under reduced motion it opens on click only, with no animation.
+function headline() {
+  const btn = h('button', { type: 'button', class: 'name-btn', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', html: brandline() });
+  const el = h('h1', { class: 'brandline', tabindex: '-1' }, btn);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const COPY = ['fontFamily', 'fontSize', 'fontWeight', 'fontStretch', 'fontStyle', 'letterSpacing', 'lineHeight', 'whiteSpace', 'display', 'verticalAlign', 'marginLeft'];
+  let layer = null, copy = null, card = null, plate = null, board = null, opened = false, armed = true, hoverT = 0, gone = 0, settleT = 0, held = [], fillT = 0, px = -1, py = -1, z = 1000, hoverRaf = 0, extW = 0, vines = {}; // extW: width of ".jpg", which melts away as the name rises
+
+  const facts = () => {
+    const vids = ALL.filter((i) => i.type === 'video').length, ym = ALL.map((i) => i.year * 12 + i.month - 1);
+    const places = new Set(ALL.map((i) => i.placeKey).filter(Boolean)).size, when = (v) => `${monthName((v % 12) + 1, 'short')} ${Math.floor(v / 12)}`;
+    const [lo, hi] = [Math.min(...ym), Math.max(...ym)];
+    return [[countLabel(ALL.length - vids, 'photo'), vids ? countLabel(vids, 'video') : null].filter(Boolean).join(' and '), ym.length ? (lo === hi ? when(lo) : `${when(lo)} to ${when(hi)}`) : null, places ? countLabel(places, 'place') : null].filter(Boolean).join(', ');
+  };
+
+  // Prints are laid out on a loose grid of cells with jitter. Sizes vary (larger ones drift more, as if closer), prints may tuck partly behind
+  // the plate, New random layout every time.
+  const scatter = (box) => {
+    const vw = innerWidth, vh = innerHeight, phone = vw < 600, cols = phone ? 3 : vw < 1000 ? 6 : 8, rows = phone ? 6 : 5, cw = vw / cols, ch = vh / rows;
+    const base = Math.round(Math.max(78, Math.min(210, cw * 1.2, ch * 1.05))), pool = ALL.filter((i) => i.type === 'photo' && i.files?.includes('thumb.webp')).sort(() => Math.random() - 0.5);
+    const cells = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = (c + 0.5 + (Math.random() - 0.5) * 0.76) * cw, y = (r + 0.5 + (Math.random() - 0.5) * 0.76) * ch, w = Math.round(base * [0.78, 1, 1, 1.25][Math.floor(Math.random() * 4)]), tuck = w * 0.1;
+      if (x > box.left + tuck && x < box.right - tuck && y > box.top + tuck && y < box.bottom - tuck) continue; // the plate covers the middle; edges of prints may peek out from under it
+      cells.push([x, y, w]);
+    }
+    cells.sort(() => Math.random() - 0.5);
+    const cx = vw / 2, cy = box.top + (box.bottom - box.top) / 2;
+    board.replaceChildren(...cells.map(([x, y, w], i) => {
+      const it = pool[i % pool.length]; if (!it) return null;
+      return h('div', { class: 'print' + (Math.random() < 0.45 ? ' taped' : ''), 'data-id': it.id, style: `left:${(x - w / 2).toFixed(1)}px;top:${(y - w * 0.66).toFixed(1)}px;width:${w}px;--r:${((Math.random() - 0.5) * 20).toFixed(1)}deg;--tr:${((Math.random() - 0.5) * 14).toFixed(1)}deg;--i:${i};--ox:${(cx - x).toFixed(1)}px;--oy:${(cy - y).toFixed(1)}px` },
+        h('div', { class: 'print-in' }, h('img', { src: mediaUrl(it, 'thumb.webp'), alt: '', draggable: 'false', decoding: 'async' })));
+    }));
+  };
+
+  // A vine: two long curves wind across the whole screen and thread through the prints. Each print the vine crosses is put in front of it or
+  // behind it, alternating along the vine, so it really weaves (prints and the vine share one stacking order; see the z-index notes in the CSS).
+  // Leaves grow along the vine, and short sprigs drape over two corners of the plate. All SVG, grown on open.
+  const SVG = 'http://www.w3.org/2000/svg';
+  const sv = (tag, attrs = {}, ...kids) => { const n = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); n.append(...kids); return n; };
+  const LEAVES = ['#3f9a63', '#56b47a', '#2f7f50', '#7fd3a0', '#8fe0b2', '#4aa571'], LEAF = 'M0,0 C10,-12 28,-12 38,0 C28,12 10,12 0,0Z', CURL = 'M0,0 C7,-12 24,-10 21,4 C18,14 5,11 9,2';
+  const f1 = (n) => n.toFixed(1);
+  const spline = (pts) => { // Catmull-Rom through the points, as cubic Beziers
+    let d = `M${f1(pts[0][0])},${f1(pts[0][1])}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+      d += ` C${f1(p1[0] + (p2[0] - p0[0]) / 6)},${f1(p1[1] + (p2[1] - p0[1]) / 6)} ${f1(p2[0] - (p3[0] - p1[0]) / 6)},${f1(p2[1] - (p3[1] - p1[1]) / 6)} ${f1(p2[0])},${f1(p2[1])}`;
+    }
+    return d;
+  };
+  // Walk the measured path and drop leaves (and the odd curl) alternately on either side.
+  const foliage = (path, len, scale, step = 1) => {
+    const g = sv('g');
+    let side = Math.random() < 0.5 ? 1 : -1, n = 0;
+    for (let s = 22 + Math.random() * 18; s < len - 8; s += (38 + Math.random() * 30) * step) {
+      const a = path.getPointAtLength(s), b = path.getPointAtLength(Math.min(len, s + 3)), ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      side = -side; n++;
+      const anim = `--d:${(0.45 + (s / len) * 2.3).toFixed(2)}s;--w:${(-Math.random() * 5).toFixed(1)}s`;
+      const put = (rot, kid, sc) => sv('g', { style: `transform:translate(${f1(a.x)}px,${f1(a.y)}px) rotate(${f1(rot)}deg)` }, sv('g', { class: 'leaf', style: `--sc:${sc.toFixed(2)};${anim}` }, sv('g', { class: 'sway' }, ...kid)));
+      g.append(put(ang + side * (32 + Math.random() * 42), [sv('path', { d: LEAF, fill: LEAVES[Math.floor(Math.random() * LEAVES.length)], stroke: '#06100a', 'stroke-opacity': '.35', 'stroke-width': '1' }), sv('path', { d: 'M3,0 L33,0', fill: 'none', stroke: '#fff', 'stroke-opacity': '.3', 'stroke-width': '1' })], scale * (0.7 + Math.random() * 0.75)));
+    }
+    return g;
+  };
+  const stem = (d, len) => { // the vine itself: a dark stem with a thin highlight, drawn on by animating its dash offset
+    const g = sv('g');
+    for (const p of [sv('path', { d, fill: 'none', stroke: '#06130c', 'stroke-opacity': '.55', 'stroke-width': '11', 'stroke-linejoin': 'round' }), sv('path', { d, fill: 'none', stroke: '#3fa56a', 'stroke-width': '7', 'stroke-linejoin': 'round' }), sv('path', { d, fill: 'none', stroke: '#8fe0b2', 'stroke-opacity': '.55', 'stroke-width': '1.8', 'stroke-linejoin': 'round', transform: 'translate(-1.4,-1.4)' })]) { p.setAttribute('class', 'grow'); p.setAttribute('style', `--L:${Math.ceil(len)}`); g.append(p); }
+    return g;
+  };
+  // Prints the vine crosses go over or under it alternately, in the order the vine meets them. Others sit behind it at random depths.
+  const weave = (paths) => {
+    const prints = [...board.children].map((el) => { const w = parseFloat(el.style.width); return { el, x: parseFloat(el.style.left), y: parseFloat(el.style.top), w, h: (w - 12) * 1.25 + 36, hit: Infinity }; });
+    paths.forEach(({ probe, len }, k) => {
+      for (let s = 0; s < len; s += 16) {
+        const pt = probe.getPointAtLength(s);
+        for (const p of prints) if (p.hit === Infinity && pt.x > p.x + 6 && pt.x < p.x + p.w - 6 && pt.y > p.y + 6 && pt.y < p.y + p.h - 6) p.hit = k * 1e5 + s;
+      }
+    });
+    prints.filter((p) => p.hit < Infinity).sort((a, b) => a.hit - b.hit).forEach((p, i) => { p.el.style.zIndex = i % 2 ? 600 + (i % 20) * 10 : 100 + (i % 20) * 10; }); // over: 600s, under: 100s; the vine sits at 500
+    prints.filter((p) => p.hit === Infinity).forEach((p) => { p.el.style.zIndex = 10 + Math.floor(Math.random() * 80); });
+  };
+  const grow = (box) => {
+    const vw = innerWidth, vh = innerHeight, phone = vw < 600, scale = phone ? 0.85 : 1.2;
+    for (const v of Object.values(vines)) v.replaceChildren();
+    const curves = [0, 1].map((k) => { // one rising left to right, one falling, so they cross behind the plate
+      const n = phone ? 6 : 8, pts = Array.from({ length: n + 1 }, (_, i) => { const t = i / n; return [-70 + t * (vw + 140), vh * (k ? 0.12 + 0.76 * t : 0.88 - 0.76 * t) + (Math.random() - 0.5) * vh * 0.24]; });
+      return spline(pts);
+    });
+    const paths = curves.map((d) => { const probe = sv('path', { d }); vines.front.append(probe); return { d, probe, len: probe.getTotalLength() }; });
+    weave(paths);
+    for (const { d, probe, len } of paths) { const leaves = foliage(probe, len, scale); probe.remove(); vines.front.append(stem(d, len), leaves); }
+    for (const [sx, sy, dir] of [[box.left, box.top, 1], [box.right, box.bottom, -1]]) { // sprigs over two corners of the plate
+      const d = spline([[sx + dir * 70, sy - dir * 8], [sx + dir * 18, sy + dir * 4], [sx - dir * 34, sy + dir * 36], [sx - dir * 52, sy + dir * 96], [sx - dir * 30, sy + dir * 150]]);
+      const probe = sv('path', { d }); vines.top.append(probe); const len = probe.getTotalLength();
+      const leaves = foliage(probe, len, scale * 0.9, 0.8); probe.remove();
+      vines.top.append(stem(d, len), leaves);
+    }
+  };
+
+  // Line-art botanicals for the specimen card: a leafy flourish for each corner, and a small divider under the name.
+  const ink = { fill: 'none', stroke: '#1d4a30', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+  const flourish = (pos) => sv('svg', { class: `corner c-${pos}`, viewBox: '0 0 64 64', 'aria-hidden': 'true' },
+    sv('path', { ...ink, d: 'M6,58 C8,36 22,16 52,8' }),
+    ...[[14, 44, -20], [20, 31, -36], [30, 21, -52], [40, 14, -66]].flatMap(([x, y, a]) => [sv('path', { d: 'M0,0 C4,-6 13,-6 18,0 C13,6 4,6 0,0Z', transform: `translate(${x},${y}) rotate(${a})`, fill: 'rgb(111 197 146 / .45)', stroke: '#1d4a30', 'stroke-width': '1.1' }), sv('path', { d: 'M0,0 C4,-6 13,-6 18,0 C13,6 4,6 0,0Z', transform: `translate(${x - 1},${y + 3}) rotate(${a + 150}) scale(.8)`, fill: 'rgb(111 197 146 / .3)', stroke: '#1d4a30', 'stroke-width': '1' })]));
+  const divider = () => sv('svg', { class: 'flip-orn', viewBox: '0 0 180 22', 'aria-hidden': 'true' },
+    sv('path', { ...ink, d: 'M4,11 H70 M110,11 H176' }),
+    sv('path', { ...ink, d: 'M70,11 C78,3 86,3 90,11 C94,19 102,19 110,11' }),
+    sv('path', { d: 'M90,11 C84,0 74,1 72,6 C80,8 86,9 90,11Z', fill: 'rgb(111 197 146 / .6)', stroke: '#1d4a30', 'stroke-width': '1.1' }),
+    sv('path', { d: 'M90,11 C96,22 106,21 108,16 C100,14 94,13 90,11Z', fill: 'rgb(111 197 146 / .6)', stroke: '#1d4a30', 'stroke-width': '1.1' }));
+
+  const place = () => { // the name starts exactly where the real one is, then rises to the middle at a size that still fits
+    const r = btn.getBoundingClientRect(), fs = parseFloat(getComputedStyle(el).fontSize);
+    const gap = fs * 0.26, bare = r.width - extW + gap, s = Math.max(1, Math.min(96 / fs, (innerWidth * 0.8) / bare)), ty = innerHeight * 0.4, nameW = bare * s, nameH = r.height * s;
+    layer.style.setProperty('--cx', r.left + r.width / 2 + 'px'); layer.style.setProperty('--cy', r.top + r.height / 2 + 'px');
+    Object.assign(copy.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+    copy.style.setProperty('--dy', ty - (r.top + r.height / 2) + 'px'); copy.style.setProperty('--s', s); copy.style.setProperty('--ex', (extW * s) / 2 + 'px');
+    card.style.top = ty + nameH / 2 + 22 + 'px';
+    const pw = Math.min(innerWidth - 24, Math.max(nameW, Math.min(card.offsetWidth, innerWidth * 0.9)) + 72), top = ty - nameH / 2 - 30, ph = nameH + 22 + card.offsetHeight + 64;
+    Object.assign(plate.style, { left: (innerWidth - pw) / 2 + 'px', top: top + 'px', width: pw + 'px', height: ph + 'px' });
+    const box = { left: (innerWidth - pw) / 2, right: (innerWidth + pw) / 2, top, bottom: top + ph };
+    scatter(box); grow(box);
+  };
+
+  const build = () => { // a black, decorative copy of the name; the dialog's real content is the card
+    copy = h('div', { class: 'flip-name', 'aria-hidden': 'true', html: btn.innerHTML });
+    const pairs = [[el, copy], ...[...btn.children].map((n, i) => [n, copy.children[i]])];
+    for (const [src, dst] of pairs) {
+      const cs = getComputedStyle(src);
+      for (const p of COPY) dst.style[p] = cs[p];
+      dst.style.color = dst === copy || src.classList.contains('by') ? '#000' : 'rgb(0 0 0 / .5)';
+      if (dst !== copy) dst.removeAttribute('class');
+    }
+    const by = copy.children[0], words = CFG.owner?.split(' ') ?? []; // "KarsonShin" opens up into "Karson Shin" while the board appears
+    if (by && words.length === 2 && by.textContent === words.join('')) by.replaceChildren(h('span', { class: 'flip-w1' }, words[0]), h('span', { class: 'flip-w2' }, words[1]));
+    const ext = copy.children[1]; // the extension collapses and fades while the circle opens, leaving the bare name centred
+    if (ext) { extW = btn.children[1].getBoundingClientRect().width; ext.classList.add('flip-ext'); }
+    copy.style.textAlign = 'center';
+    const link = (href, text, cls) => h('a', { href, class: cls }, text);
+    card = h('div', { class: 'flip-card' }, divider(), h('p', { class: 'flip-facts' }, facts()),
+      h('div', { class: 'flip-links' }, link('#/gallery', ['Browse Gallery', h('span', { 'aria-hidden': 'true' }, ' →')], 'flip-cta'), ['Albums', 'Timeline', 'Places', 'Gear', 'About'].map((n) => link('#/' + n.toLowerCase(), n))));
+    plate = h('div', { class: 'flip-plate' }, ['tl', 'tr', 'bl', 'br'].map(flourish));
+    board = h('div', { class: 'board', 'aria-hidden': 'true' });
+    for (const k of ['front', 'top']) vines[k] = sv('svg', { class: 'vine', 'aria-hidden': 'true', viewBox: `0 0 ${innerWidth} ${innerHeight}`, preserveAspectRatio: 'none' });
+    layer = h('div', { class: 'flip', role: 'dialog', 'aria-modal': 'true', 'aria-label': CFG.tagline }, board, vines.front, plate, vines.top, copy, card, h('button', { type: 'button', class: 'flip-close', html: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Close</span>' }));
+    layer.addEventListener('click', (e) => { if (e.target.closest('a')) shut(false); else if (e.target.closest('.flip-close') || !e.target.closest('.flip-card, .print, .flip-plate')) shut(); });
+    layer.addEventListener('transitionend', (e) => { if (e.target === layer && !opened) finish(); });
+    layer.addEventListener('pointerdown', drag);
+  };
+
+  function drag(e) { // drag a print around; a click without movement opens that photo in the viewer
+    const pr = e.target.closest('.print'); if (!pr || e.button) return;
+    e.preventDefault(); pr.setPointerCapture(e.pointerId); pr.style.zIndex = ++z; pr.classList.add('drag');
+    const sx = e.clientX, sy = e.clientY, bx = parseFloat(pr.style.getPropertyValue('--dx')) || 0, by = parseFloat(pr.style.getPropertyValue('--dy')) || 0;
+    let moved = false;
+    const move = (ev) => { const dx = ev.clientX - sx, dy = ev.clientY - sy; if (Math.hypot(dx, dy) > 5) moved = true; pr.style.setProperty('--dx', bx + dx + 'px'); pr.style.setProperty('--dy', by + dy + 'px'); };
+    const up = () => {
+      pr.classList.remove('drag'); pr.removeEventListener('pointermove', move); pr.removeEventListener('pointerup', up); pr.removeEventListener('pointercancel', up);
+      if (!moved) { shut(false); nav(withV('#/', pr.dataset.id), { lb: true }); }
+    };
+    pr.addEventListener('pointermove', move); pr.addEventListener('pointerup', up); pr.addEventListener('pointercancel', up);
+  }
+
+  const track = (e) => { px = e.clientX; py = e.clientY; };
+  const onKey = (e) => { if (e.key === 'Escape') shut(); };
+  const relayout = () => layer && place();
+  function open(viaKeyboard) {
+    if (opened) return;
+    opened = true; armed = false; clearTimeout(hoverT); clearTimeout(gone); clearTimeout(settleT); clearTimeout(fillT);
+    if (!layer) build();
+    layer.classList.remove('settled', 'filled'); document.body.append(layer); document.body.classList.add('board-open'); place();
+    held = [...document.body.children].filter((n) => n !== layer && !n.inert && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)); held.forEach((n) => (n.inert = true)); // nothing behind can be tabbed to or clicked
+    const sb = innerWidth - document.documentElement.clientWidth; document.documentElement.style.cssText += `overflow:hidden;padding-right:${sb}px`;
+    btn.setAttribute('aria-expanded', 'true');
+    addEventListener('pointermove', track, { passive: true }); addEventListener('keydown', onKey); addEventListener('resize', relayout);
+    layer.getBoundingClientRect(); // commit the closed state so everything grows from the name
+    layer.classList.add('on');
+    fillT = setTimeout(() => layer?.classList.add('filled'), reduce ? 0 : 850); // prints and vine start only once the circle has finished opening: animating both at once is what makes it heavy
+    settleT = setTimeout(() => layer?.classList.add('settled'), reduce ? 0 : 2400); // after the fly-in, hover and drag respond without the entrance delays
+    layer.tabIndex = -1; (viaKeyboard ? layer.querySelector('a') : layer).focus({ preventScroll: true }); // a modal owns focus, so Esc and Tab work however it was opened
+  }
+  function shut(restoreFocus = true) {
+    if (!opened) return;
+    opened = false; clearTimeout(settleT); clearTimeout(fillT); layer.classList.remove('on', 'settled', 'filled'); btn.setAttribute('aria-expanded', 'false');
+    held.forEach((n) => (n.inert = false)); held = [];
+    document.documentElement.style.overflow = ''; document.documentElement.style.paddingRight = '';
+    removeEventListener('keydown', onKey); removeEventListener('resize', relayout);
+    if (restoreFocus && layer.contains(document.activeElement)) btn.focus({ preventScroll: true });
+    if (reduce) finish(); else gone = setTimeout(finish, 1200); // normally transitionend gets there first
+  }
+  function finish() {
+    clearTimeout(gone); layer?.remove(); layer = null; document.body.classList.remove('board-open'); removeEventListener('pointermove', track);
+    const r = btn.getBoundingClientRect(); armed = !(px >= r.left && px <= r.right && py >= r.top && py <= r.bottom); // pointer still on the name: wait for it to leave before hover can reopen
+  }
+  btn.addEventListener('click', (e) => (opened ? shut() : open(e.detail === 0)));
+  el.addEventListener('pointermove', track, { passive: true }); // so we always know whether the pointer is still on the name when the board closes
+  el.addEventListener('pointerenter', (e) => { track(e); if (e.pointerType === 'mouse' && !reduce && armed && !opened) hoverT = setTimeout(() => open(false), 140); });
+  el.addEventListener('pointerleave', () => { clearTimeout(hoverT); if (!opened && !layer) armed = true; });
+  return el;
+}
+
 
 function setList(list, base) { cur.list = list; lbCtx.list = list; cur.base = base; }
 const empty = (msg = 'Nothing here yet.') => h('p', { class: 'empty' }, msg);
@@ -202,7 +404,7 @@ function pageHome() {
     h('section', { class: 'orbhero', 'aria-label': 'Photo ball' }, stage,
       h('p', { class: 'orb-count' }, [countLabel(photos, 'photo'), videos ? countLabel(videos, 'video') : null, places ? countLabel(places, 'place') : null].filter(Boolean).join('  ·  ')),
       h('div', { class: 'orb-copy' },
-        h('h1', { class: 'brandline', tabindex: '-1', html: brandline() }),
+        headline(),
         h('div', { class: 'orb-links' }, h('a', { class: 'cta', href: '#/gallery' }, 'Browse Gallery', h('span', { 'aria-hidden': 'true' }, ' →')), h('a', { class: 'ghost', href: '#/albums' }, 'Albums'))),
       ),
     tops.length ? h('section', { class: 'band' }, h('div', { class: 'band-head' }, h('h2', {}, 'Albums'), h('a', { href: '#/albums' }, 'All albums →')), h('div', { class: 'cards' }, tops.map(albumCard))) : null,

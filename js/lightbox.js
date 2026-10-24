@@ -216,7 +216,7 @@ export function createLightbox(ctx) {
     root.querySelector('.lb-prev').hidden = i === 0; root.querySelector('.lb-next').hidden = i === ctx.list.length - 1;
     const dl = item.type === 'video' ? 'v1080.mp4' : 'download.jpg';
     dlBtn.href = mediaUrl(item, dl);
-    dlBtn.setAttribute('download', `${item.file.replace(/\.[^.]+$/, '')}-verdant-archive${item.type === 'video' ? '.mp4' : '-1080.jpg'}`);
+    dlBtn.setAttribute('download', `${item.file.replace(/\.[^.]+$/, '')}-verdant-archive${item.type === 'video' ? '.mp4' : '.jpg'}`);
     zoomBtn.hidden = item.type === 'video';
     if (item.type === 'video') {
       img.hidden = true;

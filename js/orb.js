@@ -169,7 +169,7 @@ export function createOrb({ items, onOpen, social, onFirstInteraction = () => {}
   function tick(now) {
     raf = requestAnimationFrame(tick);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (!visible || document.body.classList.contains('lb-open')) return;
+    if (!visible || document.body.classList.contains('lb-open') || document.body.classList.contains('board-open')) return; // nothing to draw behind the lightbox or the headline board
     if (anim) {
       const p = clamp((now - anim.t0) / anim.dur, 0, 1), e = ease(p);
       rx = anim.fx + (anim.tx - anim.fx) * e; ry = anim.fy + (anim.ty - anim.fy) * e;
