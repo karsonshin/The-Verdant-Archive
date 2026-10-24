@@ -142,7 +142,11 @@ let lastW = innerWidth;
 addEventListener('resize', debounce(() => { if (innerWidth !== lastW) { lastW = innerWidth; grids.forEach((g) => (g._w = 0)); layoutGrids(); } }, 150));
 
 // ---------------------------------------------------------------- pages
-const brandline = () => esc(CFG.tagline).replace(esc(CFG.owner), `<span class="by">${esc(CFG.owner)}</span>`);
+// A tagline shaped like a file name ("KarsonShin.jpg") is set as name + extension; anything else highlights the owner's name as before.
+const brandline = () => {
+  const f = /^(\S+)(\.[a-z0-9]{2,4})$/i.exec(CFG.tagline || '');
+  return f ? `<span class="by">${esc(f[1])}</span><span class="ext">${esc(f[2])}</span>` : esc(CFG.tagline).replace(esc(CFG.owner), `<span class="by">${esc(CFG.owner)}</span>`);
+};
 
 
 function setList(list, base) { cur.list = list; lbCtx.list = list; cur.base = base; }
