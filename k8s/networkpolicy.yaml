@@ -1,0 +1,7 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: verdant-site }
+spec:
+  podSelector: { matchLabels: { app: verdant-site } }
+  policyTypes: [Ingress]
+  ingress: [{ ports: [{ port: 8080 }] }]

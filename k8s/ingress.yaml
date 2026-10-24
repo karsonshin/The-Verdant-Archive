@@ -1,0 +1,12 @@
+# Needs ingress-nginx + cert-manager (infra/terraform installs both). Change the host before applying.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: verdant-site
+  annotations: { cert-manager.io/cluster-issuer: letsencrypt }
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [archive.example.com], secretName: verdant-site-tls }]
+  rules:
+    - host: archive.example.com
+      http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: verdant-site, port: { name: http } } } }] }

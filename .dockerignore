@@ -1,0 +1,11 @@
+.git
+.github
+.impeccable
+verdant-archive-originals
+infra
+k8s
+test
+docs
+*.md
+verdantArchiveMacOS
+package.json
