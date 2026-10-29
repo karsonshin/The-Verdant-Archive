@@ -155,7 +155,7 @@ Per item, stored in `data/photos.json` (paths and metadata only, no base64, one 
 
 - **Time zone**: `OffsetTimeOriginal` if the camera wrote it; otherwise derived from the GPS clock (local time minus GPS UTC); otherwise recorded as unknown. The Info panel shows the capture wall-clock time with its offset *and* your local time.
 - **Geocoding**: free OpenStreetMap Nominatim at ingest time (one request per second, results cached in `geocache.json` in ~1 km cells so reruns and CI agree). If it's unreachable the place stays blank and ingest continues.
-- **Privacy note:** GPS coordinates are public in `photos.json` because the Info panel's map link needs them. They're rounded to `gpsDecimals` (default 5, about 1 m); set it to 2 for roughly 1 km, or `geocode.enabled: false` to skip place names. Public images themselves contain no GPS.
+- **Location privacy:** the real GPS point never reaches the public site. At ingest it is snapped to the centre of a fixed area grid (`locationAreaKm`, default 5 km, in `site.config.json` or Settings), the map draws a circle that covers that area instead of a pin, and the only text is the nearest city, region and country. The exact point stays in your private originals. Photos ingested before this was added: run `npm run scrub-locations` once (`-- --dry-run` to preview). Note that earlier versions of `photos.json` still exist in the public repo's git history. Public images themselves contain no GPS. Set `geocode.enabled: false` to skip place names entirely.
 
 ## Site features
 

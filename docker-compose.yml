@@ -1,4 +1,5 @@
 # Local production-like run: docker compose up --build  ->  http://localhost:8080
+# Browser tests against the built image: docker compose run --rm --build e2e
 services:
   site:
     build: .
@@ -6,3 +7,16 @@ services:
     read_only: true
     tmpfs: [/tmp]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      retries: 20
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.49.1-jammy
+    profiles: [test]
+    depends_on: { site: { condition: service_healthy } }
+    working_dir: /e2e
+    environment: { BASE_URL: "http://site:8080", CI: "1" }
+    volumes: ["./e2e:/e2e"]
+    command: sh -c "npm install --no-audit --no-fund && npx playwright test"

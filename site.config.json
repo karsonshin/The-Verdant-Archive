@@ -38,7 +38,7 @@
     "crf": 23,
     "previewSeconds": 3
   },
-  "gpsDecimals": 5,
+  "locationAreaKm": 5,
   "geocode": {
     "enabled": true,
     "userAgent": "verdant-archive-ingest/1.0 (personal gallery)"

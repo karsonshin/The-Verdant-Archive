@@ -52,4 +52,7 @@ export const debounce = (fn, ms) => {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 };
 
-export const mediaUrl = (item, name) => `media/${item.id}/${name}`;
+// Optional CDN: set "mediaBase" (e.g. "https://cdn.example.com/") in site.config.json to serve media/ from it.
+let mediaBase = '';
+export const setMediaBase = (b) => { mediaBase = b ? b.replace(/\/?$/, '/') : ''; };
+export const mediaUrl = (item, name) => `${mediaBase}media/${item.id}/${name}`;

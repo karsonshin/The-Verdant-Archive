@@ -58,3 +58,13 @@ test('every item lists derivative files that exist in media/', () => {
 test('gear and portrait images referenced by config exist', () => {
   for (const p of [cfg.portrait, ...(cfg.gear || []).map((g) => g.image)].filter(Boolean)) assert.ok(existsSync(path.join(ROOT, p)), `missing ${p}`);
 });
+
+test('location privacy: no exact coordinates, no street-level text anywhere in the published data', () => {
+  const dec = (n) => String(n).split('.')[1]?.length || 0;
+  for (const i of db.items) {
+    if (i.gps) assert.ok(dec(i.gps.lat) <= 3 && dec(i.gps.lon) <= 3, `${i.id}: coordinates are more precise than a coarse area`);
+    assert.deepEqual(Object.keys(i.place || {}).filter((k) => !['city', 'region', 'country', 'text'].includes(k)), [], `${i.id}: place has fields beyond city, region and country`);
+  }
+  assert.ok(cfg.locationAreaKm >= 1, 'site.config.json needs locationAreaKm');
+  assert.ok(!('gpsDecimals' in cfg), 'gpsDecimals is gone');
+});

@@ -175,7 +175,7 @@ export function createLightbox(ctx) {
     if (t.utc) when.push(h('div', { class: 'muted' }, 'Your local time: ' + new Date(t.utc).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })));
     const where = it.gps || it.place ? [
       it.place?.text ? h('div', {}, it.place.text) : null,
-      it.gps ? h('a', { href: `https://www.openstreetmap.org/?mlat=${it.gps.lat}&mlon=${it.gps.lon}#map=13/${it.gps.lat}/${it.gps.lon}`, target: '_blank', rel: 'noopener', class: 'maplink' }, `${it.gps.lat.toFixed(4)}, ${it.gps.lon.toFixed(4)} · map ↗`) : null
+      it.gps ? h('a', { href: `https://www.openstreetmap.org/#map=11/${it.gps.lat}/${it.gps.lon}`, target: '_blank', rel: 'noopener', class: 'maplink' }, 'Approximate area on map ↗') : null // the centre of a coarse area, shown at city scale, with no marker
     ] : null;
     const exposure = [ex.focal && `${ex.focal} mm`, ex.aperture && `f/${ex.aperture}`, ex.shutter && `${ex.shutter}${/s$/.test(ex.shutter) ? '' : ' s'}`, ex.iso && `ISO ${ex.iso}`].filter(Boolean).join(' · ');
     const albums = (it.albums || []).map(ctx.albumName).filter(Boolean).join(', ');
