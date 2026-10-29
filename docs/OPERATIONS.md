@@ -25,7 +25,7 @@ Settings -> Pages -> Source: **GitHub Actions**, then add repository variable `P
 4. Edit the host in `k8s/ingress.yaml` and the email in `k8s/clusterissuer.yaml`, then `kubectl apply -f k8s/clusterissuer.yaml && kubectl apply -k k8s/`.
 
 ## Size limits to know about
-- GitHub Pages sites are limited to about **1 GB** published. `media/` is currently larger; the Health tab flags this. The container/Kubernetes route has no such limit.
+- GitHub Pages sites are limited to about **1 GB** published. `media/` is currently about 2.9 GB (full-resolution viewing copies and downloads); the Health tab flags this. Shrink it with a lower `derivatives.full.size` / `derivatives.download.size` in `site.config.json` plus a regenerate, or serve `media/` from elsewhere with the `mediaBase` setting. The container/Kubernetes route has no such limit.
 - The image bakes in all of `media/`. Re-tag only when the gallery should ship; the site files revalidate, derivatives are immutable and cached for a year.
 
 ## Admin monitoring

@@ -1,4 +1,4 @@
-import { $, $$, h, esc, md, plain, fmtDur, debounce, mediaUrl, wall } from './util.js';
+import { $, $$, h, esc, md, plain, fmtDur, debounce, mediaUrl, setMediaBase, wall } from './util.js';
 import { createLightbox } from './lightbox.js';
 import * as social from './social.js';
 import { createOrb } from './orb.js';
@@ -162,12 +162,17 @@ const brandline = () => {
 // black on a white plate with a title card under it, and prints from the archive fly out around it. Prints drift with the pointer, lift on
 // hover, can be dragged, and open in the viewer when clicked. It stays until Esc, a click on the empty board, Close, or a link.
 // Under reduced motion it opens on click only, with no animation.
+const DEFAULT_INTRO = ['Welcome to the **Verdant Archive**, a living archive of places, people, and passing moments. From distant landscapes to familiar streets, this portfolio is where my photographs and videos take root.',
+  'Spin the sphere, follow the Trunk of Time, wander the albums, or search by mood. Every frame tells a story, and every moment is my own. This garden is always growing. Stay awhile, and watch it bloom.'].join('\n\n');
 function headline() {
   const btn = h('button', { type: 'button', class: 'name-btn', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', html: brandline() });
   const el = h('h1', { class: 'brandline', tabindex: '-1' }, btn);
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const COPY = ['fontFamily', 'fontSize', 'fontWeight', 'fontStretch', 'fontStyle', 'letterSpacing', 'lineHeight', 'whiteSpace', 'display', 'verticalAlign', 'marginLeft'];
-  let layer = null, copy = null, card = null, plate = null, board = null, opened = false, armed = true, hoverT = 0, gone = 0, settleT = 0, held = [], fillT = 0, px = -1, py = -1, z = 1000, hoverRaf = 0, extW = 0, vines = {}; // extW: width of ".jpg", which melts away as the name rises
+  // A small arrow and a hint pointing at the name from its south-east corner. It stays, and jiggles every few seconds; it only steps aside while the popup is open.
+  const canHover = matchMedia('(hover: hover)').matches;
+  const hint = h('span', { class: 'hover-hint', 'aria-hidden': 'true', html: '<svg viewBox="0 0 56 44"><path d="M50 40C53 21 31 9 9 9M9 9l9-5M9 9l8 7"/></svg><span>' + (canHover && !reduce ? 'Hover Over Me!' : canHover ? 'Click Me!' : 'Tap Me!') + '</span>' });
+  el.append(hint);
+  let layer = null, card = null, plate = null, board = null, opened = false, armed = true, hoverT = 0, gone = 0, settleT = 0, held = [], fillT = 0, px = -1, py = -1, z = 1000, hoverRaf = 0, vines = {};
 
 
   // Prints are laid out on a loose grid of cells with jitter. Sizes vary (larger ones drift more, as if closer), prints may tuck partly behind
@@ -264,42 +269,25 @@ function headline() {
     sv('path', { d: 'M90,11 C84,0 74,1 72,6 C80,8 86,9 90,11Z', fill: 'rgb(111 197 146 / .6)', stroke: '#1d4a30', 'stroke-width': '1.1' }),
     sv('path', { d: 'M90,11 C96,22 106,21 108,16 C100,14 94,13 90,11Z', fill: 'rgb(111 197 146 / .6)', stroke: '#1d4a30', 'stroke-width': '1.1' }));
 
-  const place = () => { // the name starts exactly where the real one is, then rises to the middle at a size that still fits
-    const r = btn.getBoundingClientRect(), fs = parseFloat(getComputedStyle(el).fontSize);
-    const gap = fs * 0.26, bare = r.width - extW + gap, s = Math.max(1, Math.min(96 / fs, (innerWidth * 0.8) / bare)), nameW = bare * s, nameH = r.height * s;
-    card.style.maxHeight = Math.max(140, innerHeight - 32 - nameH - 22 - 64) + 'px'; // a long message scrolls inside the card instead of running off a small screen
-    const ph = nameH + 22 + card.offsetHeight + 64, top = Math.max(16, (innerHeight - ph) / 2), ty = top + 30 + nameH / 2; // the whole popup sits in the middle of the screen
-    layer.style.setProperty('--cx', r.left + r.width / 2 + 'px'); layer.style.setProperty('--cy', r.top + r.height / 2 + 'px');
-    Object.assign(copy.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
-    copy.style.setProperty('--dy', ty - (r.top + r.height / 2) + 'px'); copy.style.setProperty('--s', s); copy.style.setProperty('--ex', (extW * s) / 2 + 'px');
-    card.style.top = ty + nameH / 2 + 22 + 'px';
-    const pw = Math.min(innerWidth - 24, Math.max(nameW, Math.min(card.offsetWidth, innerWidth * 0.9)) + 72);
+  const place = () => { // the popup sits in the middle of the screen: the plate is wrapped round the card
+    card.style.maxHeight = Math.max(140, innerHeight - 32 - 74) + 'px'; // a long message scrolls inside the card instead of running off a small screen
+    const ph = card.offsetHeight + 74, top = Math.max(16, (innerHeight - ph) / 2);
+    card.style.top = top + 34 + 'px';
+    const pw = Math.min(innerWidth - 24, card.offsetWidth + 72);
     Object.assign(plate.style, { left: (innerWidth - pw) / 2 + 'px', top: top + 'px', width: pw + 'px', height: ph + 'px' });
     const box = { left: (innerWidth - pw) / 2, right: (innerWidth + pw) / 2, top, bottom: top + ph };
     scatter(box); grow(box);
   };
 
-  const build = () => { // a black, decorative copy of the name; the dialog's real content is the card
-    copy = h('div', { class: 'flip-name', 'aria-hidden': 'true', html: btn.innerHTML });
-    const pairs = [[el, copy], ...[...btn.children].map((n, i) => [n, copy.children[i]])];
-    for (const [src, dst] of pairs) {
-      const cs = getComputedStyle(src);
-      for (const p of COPY) dst.style[p] = cs[p];
-      dst.style.color = dst === copy || src.classList.contains('by') ? '#000' : 'rgb(0 0 0 / .5)';
-      if (dst !== copy) dst.removeAttribute('class');
-    }
-    const by = copy.children[0], words = CFG.owner?.split(' ') ?? []; // "KarsonShin" opens up into "Karson Shin" while the board appears
-    if (by && words.length === 2 && by.textContent === words.join('')) by.replaceChildren(h('span', { class: 'flip-w1' }, words[0]), h('span', { class: 'flip-w2' }, words[1]));
-    const ext = copy.children[1]; // the extension collapses and fades while the circle opens, leaving the bare name centred
-    if (ext) { extW = btn.children[1].getBoundingClientRect().width; ext.classList.add('flip-ext'); }
-    copy.style.textAlign = 'center';
+  const build = () => {
     const link = (href, text, cls) => h('a', { href, class: cls }, text);
-    card = h('div', { class: 'flip-card' }, divider(), h('div', { class: 'flip-bio', html: md(CFG.bio || '') }),
+    card = h('div', { class: 'flip-card' }, divider(), h('div', { class: 'flip-bio', html: md(CFG.intro || DEFAULT_INTRO) }),
       h('div', { class: 'flip-links' }, link('#/about', ['More about me', h('span', { 'aria-hidden': 'true' }, ' →')], 'flip-cta'), link('#/gallery', 'Browse the gallery')));
-    plate = h('div', { class: 'flip-plate' }, ['tl', 'tr', 'bl', 'br'].map(flourish));
+    const closeBtn = h('button', { type: 'button', class: 'flip-close', 'aria-label': 'Close', title: 'Close (Esc)', html: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' });
+    plate = h('div', { class: 'flip-plate' }, ['tl', 'bl', 'br'].map(flourish), closeBtn);
     board = h('div', { class: 'board', 'aria-hidden': 'true' });
     for (const k of ['front', 'top']) vines[k] = sv('svg', { class: 'vine', 'aria-hidden': 'true', viewBox: `0 0 ${innerWidth} ${innerHeight}`, preserveAspectRatio: 'none' });
-    layer = h('div', { class: 'flip', role: 'dialog', 'aria-modal': 'true', 'aria-label': CFG.tagline }, board, vines.front, plate, vines.top, copy, card, h('button', { type: 'button', class: 'flip-close', html: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Close</span>' }));
+    layer = h('div', { class: 'flip', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Welcome to the ' + CFG.siteName }, board, vines.front, plate, vines.top, card);
     layer.addEventListener('click', (e) => { if (e.target.closest('a')) shut(false); else if (e.target.closest('.flip-close') || !e.target.closest('.flip-card, .print, .flip-plate')) shut(); });
     layer.addEventListener('transitionend', (e) => { if (e.target === layer && !opened) finish(); });
     layer.addEventListener('pointerdown', drag);
@@ -323,6 +311,7 @@ function headline() {
   const relayout = () => layer && place();
   function open(viaKeyboard) {
     if (opened) return;
+    hint.classList.add('gone');
     opened = true; armed = false; clearTimeout(hoverT); clearTimeout(gone); clearTimeout(settleT); clearTimeout(fillT);
     if (!layer) build();
     layer.classList.remove('settled', 'filled'); document.body.append(layer); document.body.classList.add('board-open'); place();
@@ -346,12 +335,13 @@ function headline() {
     if (reduce) finish(); else gone = setTimeout(finish, 1200); // normally transitionend gets there first
   }
   function finish() {
-    clearTimeout(gone); layer?.remove(); layer = null; document.body.classList.remove('board-open'); removeEventListener('pointermove', track);
+    hint.classList.remove('gone'); clearTimeout(gone); layer?.remove(); layer = null; document.body.classList.remove('board-open'); removeEventListener('pointermove', track);
     const r = btn.getBoundingClientRect(); armed = !(px >= r.left && px <= r.right && py >= r.top && py <= r.bottom); // pointer still on the name: wait for it to leave before hover can reopen
   }
   btn.addEventListener('click', (e) => (opened ? shut() : open(e.detail === 0)));
   el.addEventListener('pointermove', track, { passive: true }); // so we always know whether the pointer is still on the name when the board closes
-  el.addEventListener('pointerenter', (e) => { track(e); if (e.pointerType === 'mouse' && !reduce && armed && !opened) hoverT = setTimeout(() => open(false), 140); });
+  // opening on hover needs a pause of 450ms, not a pass-through: the viewfinder brackets close in while you wait
+  el.addEventListener('pointerenter', (e) => { track(e); if (e.pointerType === 'mouse' && !reduce && armed && !opened) hoverT = setTimeout(() => open(false), 450); });
   el.addEventListener('pointerleave', () => { clearTimeout(hoverT); if (!opened && !layer) armed = true; });
   return el;
 }
@@ -471,7 +461,7 @@ function pageGallery(q) {
     h('select', { id: 'f-sort', 'aria-label': 'Sort', onchange: (e) => set('sort', e.target.value === 'newest' ? '' : e.target.value) },
       [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['name', 'File name']].map(([v, t]) => h('option', { value: v, selected: (p.sort || 'newest') === v }, t))),
     h('a', { class: 'clear', href: '#/gallery' }, 'Clear all'));
-  const labels = { cat: 'Category', tag: 'Tag', album: 'Album', year: 'Year', month: 'Month', place: 'Location', camera: 'Camera', q: 'Search', mood: 'Mood', like: 'Looks like', color: 'Colour' };
+  const labels = { cat: 'Category', tag: 'Tag', album: 'Album', year: 'Year', month: 'Month', place: 'Location', camera: 'Camera', q: 'Search', mood: 'Mood', like: 'Looks like', color: 'Color' };
   const active = h('div', { class: 'active', 'aria-label': 'Active filters' });
   const nActive = h('span', { class: 'n' });
   const panel = h('details', { class: 'filter-panel' }, h('summary', {}, 'Filters', nActive), bar);
@@ -490,7 +480,7 @@ function pageGallery(q) {
     }
     if (found && (!list.length || found.unmatched.length)) {
       const place = places[0]?.split(',')[0], year = years[0], looks = (VIS ? Vision.moodSuggestions(ALL, VIS).slice(0, 2).map((m) => m.label.toLowerCase()) : []);
-      kids.push(h('p', { class: 'assist-note' }, `Try a look, colour, place or date, like ${[looks[0] && `“${looks[0]}”`, looks[1] && `“${looks[1]} green”`, place && `“${place}”`, year && `“${year}”`].filter(Boolean).join(', ')}.`));
+      kids.push(h('p', { class: 'assist-note' }, `Try a look, color, place or date, like ${[looks[0] && `“${looks[0]}”`, looks[1] && `“${looks[1]} green”`, place && `“${place}”`, year && `“${year}”`].filter(Boolean).join(', ')}.`));
     }
     assist.replaceChildren(...kids);
   }
@@ -518,7 +508,7 @@ function feelCollections() {
   if (!cols.length) return null;
   const used = new Set();
   return h('section', { class: 'band feel', 'aria-labelledby': 'feel-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'feel-h' }, 'Collections by feel')),
-    h('p', { class: 'muted feel-note' }, 'Grouped automatically by how the photos look: colour, light and mood. Click one to search it.'),
+    h('p', { class: 'muted feel-note' }, 'Grouped automatically by how the photos look: color, light and mood. Click one to search it.'),
     h('div', { class: 'cards' }, cols.map((c) => {
       const cover = c.items.find((i) => !used.has(i.id)) || c.items[0], pal = VIS.get(cover.id)?.pal || []; // a different cover for each collection
       used.add(cover.id);
@@ -555,9 +545,7 @@ function pageTimeline(q) {
   const list = ALL.slice().sort(order === 'oldest' ? SORTS.newest : SORTS.oldest);
   const base = order === 'oldest' ? '#/timeline?order=oldest' : '#/timeline';
   setList(list, base);
-  const LEVELS = [34, 44, 54, 66, 82, 102, 126, 156, 190]; // ring thickness = tile size in px: from "years at a glance" to "big pictures"
-  const store = { get: () => { try { return +localStorage.getItem('va-flow2'); } catch { return NaN; } }, set: (v) => { try { localStorage.setItem('va-flow2', v); } catch { /* fine */ } } };
-  let level = Number.isFinite(store.get()) && localStorage.getItem('va-flow2') !== null ? Math.min(LEVELS.length - 1, Math.max(0, store.get())) : 4;
+  const store = { get: () => { try { const r = localStorage.getItem('va-flow3'); return r === null ? NaN : +r; } catch { return NaN; } }, set: (v) => { try { localStorage.setItem('va-flow3', v); } catch { /* fine */ } } }; // zoom, 0 (all the years at a glance) to 1 (big pictures)
   // wrap scrolls sideways when the trunk is wider than the page
   const stage = h('div', { class: 'flow', role: 'list', 'aria-label': 'Timeline of photos and videos, winding outward from the centre like tree rings' });
   const wrap = h('div', { class: 'flow-wrap' }, stage);
@@ -583,37 +571,51 @@ function pageTimeline(q) {
 
   const centres = []; // tile centres in stage pixels, for the date pill
   let ringH = 100, cxS = 0, cyS = 0, curS = 0; // the trunk's centre and ring thickness, so zooming can keep the middle where it is
-  function layout() {
+  const n = tiles.length, TAU = Math.PI * 2, th0 = -Math.PI / 2; // start at the top, wind clockwise
+  const plan = (s) => {
+    const r0 = s * 0.75, BARK = Math.max(24, s * 0.5), rs = (t) => r0 + (s * (t - th0)) / TAU; // Archimedean spiral: the line moves out by one tile per turn
+    let th = th0; const span = [];
+    for (let i = 0; i < n; i++) { // each photo takes the stretch of the band, between this turn and the next, that is about one tile long
+      let dth = s / (rs(th) + s / 2); dth = s / (rs(th + dth / 2) + s / 2);
+      span.push([th, th + dth]); th += dth;
+    }
+    const rEnd = rs(th) + s;
+    return { s, BARK, rs, span, th, rEnd, trunk: Math.ceil((rEnd + BARK * 1.45 + 8) * 2) }; // trunk: its diameter, bark included
+  };
+  const bounds = () => (wrap.clientWidth < 520 ? [25, 142] : [34, 190]); // ring thickness range in px
+  const sOf = (t, lo, hi) => lo * (hi / lo) ** t, tOf = (s, lo, hi) => Math.log(s / lo) / Math.log(hi / lo); // zoom is spread evenly in how big things look
+  const fitSize = (W, lo, hi) => { const goal = W * 0.62; if (plan(lo).trunk >= goal) return lo; if (plan(hi).trunk <= goal) return hi; let x = lo, y = hi; for (let i = 0; i < 24; i++) { const m = (x + y) / 2; if (plan(m).trunk > goal) y = m; else x = m; } return x; }; // the size at which the trunk leaves room for roots either side
+  let tNow = null;
+  let barkS = 0, barkCx = 0, barkCy = 0; // what the bark was last drawn at, so zooming can scale it cheaply
+  function layout(quick = false) { // quick: only the photos are redone; the bark is scaled to match and redrawn crisply once zooming pauses
     const W = wrap.clientWidth;
     if (!W) return;
-    const base0 = LEVELS[level] * (W < 520 ? 0.75 : 1), n = tiles.length, TAU = Math.PI * 2, th0 = -Math.PI / 2; // start at the top, wind clockwise
-    const plan = (s) => {
-      const r0 = s * 0.75, BARK = Math.max(24, s * 0.5), rs = (t) => r0 + (s * (t - th0)) / TAU; // Archimedean spiral: the line moves out by one tile per turn
-      let th = th0; const span = [];
-      for (let i = 0; i < n; i++) { // each photo takes the stretch of the band, between this turn and the next, that is about one tile long
-        let dth = s / (rs(th) + s / 2); dth = s / (rs(th + dth / 2) + s / 2);
-        span.push([th, th + dth]); th += dth;
-      }
-      const rEnd = rs(th) + s;
-      return { s, BARK, rs, span, th, rEnd, trunk: Math.ceil((rEnd + BARK * 1.45 + 8) * 2) }; // trunk: its diameter, bark included
-    };
-    let P = plan(base0);
-    if (level <= 4 && P.trunk > W * 0.62) { const f = (W * 0.62) / P.trunk; if (f >= 0.45) P = plan(base0 * f); } // zoomed-out levels leave room either side for the roots; zoomed-in ones scroll sideways
-    const { s, BARK, rs, span, rEnd, trunk } = P;
+    const [lo, hi] = bounds();
+    if (tNow === null) { const raw = store.get(); tNow = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : tOf(fitSize(W, lo, hi), lo, hi); } // first visit: the size that fits this screen
+    const { s, BARK, rs, span, rEnd, trunk } = plan(sOf(tNow, lo, hi));
     const SW = Math.ceil(Math.max(W, trunk + BARK * 8)), SH = Math.ceil(trunk + BARK * 10.5), cx = SW / 2, cy = SH / 2; // the stage is as wide as the page, so roots can run all the way to its edges
     cxS = cx; cyS = cy; curS = s;
     ringH = s; centres.length = 0;
     tiles.forEach((a, i) => {
       // The photo is exactly the piece of the band between two radial lines and the spiral above and below: neighbours share every edge, so nothing shows between them.
-      const [ta, tb] = span[i], K = Math.max(2, Math.ceil((tb - ta) / 0.1)), pts = [];
-      for (let k = 0; k <= K; k++) { const t = ta + ((tb - ta) * k) / K, r = rs(t) + s; pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } // outer edge
-      for (let k = K; k >= 0; k--) { const t = ta + ((tb - ta) * k) / K, r = rs(t); pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } // inner edge, back again
-      const mx = pts.reduce((m, p) => m + p[0], 0) / pts.length, my = pts.reduce((m, p) => m + p[1], 0) / pts.length;
-      const grown = pts.map(([x, y]) => { const d = Math.hypot(x - mx, y - my) || 1; return [x + ((x - mx) / d) * 0.6, y + ((y - my) / d) * 0.6]; }); // 0.6px of overlap hides hairlines
-      const x0 = Math.min(...grown.map((p) => p[0])), y0 = Math.min(...grown.map((p) => p[1])), x1 = Math.max(...grown.map((p) => p[0])), y1 = Math.max(...grown.map((p) => p[1]));
+      const [ta, tb] = span[i], K = Math.max(2, Math.ceil((tb - ta) / 0.1)), np = (K + 1) * 2, xs = new Array(np), ys = new Array(np);
+      let sx = 0, sy = 0;
+      for (let k = 0; k <= K; k++) { // outer edge going one way, inner edge coming back
+        const t = ta + ((tb - ta) * k) / K, c = Math.cos(t), sn = Math.sin(t), ro = rs(t) + s, ri = ro - s, j = np - 1 - k;
+        xs[k] = cx + ro * c; ys[k] = cy + ro * sn; xs[j] = cx + ri * c; ys[j] = cy + ri * sn; sx += xs[k] + xs[j]; sy += ys[k] + ys[j];
+      }
+      const mx = sx / np, my = sy / np;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let j = 0; j < np; j++) { // 0.6px of overlap hides hairlines between neighbours
+        const dx = xs[j] - mx, dy = ys[j] - my, d = Math.hypot(dx, dy) || 1;
+        xs[j] += (dx / d) * 0.6; ys[j] += (dy / d) * 0.6;
+        if (xs[j] < x0) x0 = xs[j]; if (xs[j] > x1) x1 = xs[j]; if (ys[j] < y0) y0 = ys[j]; if (ys[j] > y1) y1 = ys[j];
+      }
+      let poly = '';
+      for (let j = 0; j < np; j++) poly += (j ? ',' : '') + (xs[j] - x0).toFixed(1) + 'px ' + (ys[j] - y0).toFixed(1) + 'px';
       const st = a.style;
       st.left = x0.toFixed(1) + 'px'; st.top = y0.toFixed(1) + 'px'; st.width = (x1 - x0).toFixed(1) + 'px'; st.height = (y1 - y0).toFixed(1) + 'px';
-      st.clipPath = `polygon(${grown.map(([x, y]) => `${(x - x0).toFixed(1)}px ${(y - y0).toFixed(1)}px`).join(',')})`;
+      st.clipPath = `polygon(${poly})`;
       const tm = (ta + tb) / 2, rm = rs(tm) + s / 2, x = cx + rm * Math.cos(tm), y = cy + rm * Math.sin(tm);
       centres.push([x, y]);
       const lab = labelOf.get(a);
@@ -621,8 +623,10 @@ function pageTimeline(q) {
     });
     stage.style.width = SW + 'px'; stage.style.height = SH + 'px';
     stage.classList.toggle('dense', s < 60);
-    drawBark(cx, cy, rEnd, BARK, SW, SH);
+    if (quick && barkS) { bark.style.transformOrigin = `${barkCx}px ${barkCy}px`; bark.style.transform = `translate(${cx - barkCx}px, ${cy - barkCy}px) scale(${s / barkS})`; }
+    else { drawBark(cx, cy, rEnd, BARK, SW, SH); barkS = s; barkCx = cx; barkCy = cy; bark.style.transform = ''; }
     if (SW > W) wrap.scrollLeft = (SW - W) / 2; // wide trunks open centred
+    paintSlider();
     pillUpdate();
   }
 
@@ -634,6 +638,8 @@ function pageTimeline(q) {
     const wob = (a, amp) => amp * (0.55 * Math.sin(3 * a + ph[0]) + 0.3 * Math.sin(5 * a + ph[1]) + 0.2 * Math.sin(8 * a + ph[2]) + 0.12 * Math.sin(13 * a + ph[3]));
     const ring = (r, amp, steps = 120) => { let d = ''; for (let k = 0; k <= steps; k++) { const a = (k / steps) * Math.PI * 2, rr = r + wob(a, amp); d += `${k ? 'L' : 'M'}${(cx + rr * Math.cos(a)).toFixed(1)},${(cy + rr * Math.sin(a)).toFixed(1)}`; } return d + 'Z'; };
     const inner = rEnd + 3, outer = rEnd + B * 1.45, pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    const gGround = svgEl('g'), gMid = svgEl('g'), gTop = svgEl('g'), rootPts = []; // rootPts: points along every root with its half-width, so the scenery keeps clear of them
+    bark.append(gGround, gMid);
     bark.append(svgEl('circle', { cx, cy, r: inner, class: 'wood' }));
     bark.append(svgEl('path', { d: ring(outer, B * 0.22) + ring(inner, B * 0.06), 'fill-rule': 'evenodd', class: 'bark-fill' }));
     for (const [r, amp, w, cls] of [[outer - B * 0.36, B * 0.18, 1.6, 'bark-mid'], [outer - B * 0.7, B * 0.12, 1.2, 'bark-mid'], [inner, B * 0.06, 2, 'bark-edge'], [outer, B * 0.22, 3, 'bark-edge']]) bark.append(svgEl('path', { d: ring(r, amp), class: cls, 'stroke-width': w }));
@@ -648,12 +654,13 @@ function pageTimeline(q) {
     // so it can wander without swinging round the trunk. Drawn over the bark's outer edge so they grow out of it.
     const root = (ox, oy, dir, L, wBase, bend, wind, depth = 0) => {
       const N = Math.max(44, Math.min(130, Math.round(L / 9))), C = [], heading = [], ph = rnd() * 6.28, waves = (1.3 + rnd() * 1.3) * Math.max(1, L / (B * 7)); // longer roots wander more
-      const wAt = (k) => { const t = k / N; return wBase * (0.1 + 0.9 * Math.pow(1 - t, 1.5)) * Math.sqrt(Math.max(0, 1 - t ** 6)) * (1 + 0.1 * Math.sin(t * 13 + ph)) + 1.2; }; // thick at the trunk, then a long tapering tail; a little knobbly, rounded tip
+      const wAt = (k) => { const t = k / N; return wBase * (0.2 + 0.8 * Math.pow(1 - t, 1.1)) * Math.sqrt(Math.max(0, 1 - t ** 6)) * (1 + 0.1 * Math.sin(t * 13 + ph)) + 1.4; }; // thick at the trunk, then a long tapering tail; a little knobbly, rounded tip
       let x = ox, y = oy;
       for (let k = 0; k <= N; k++) {
         const t = k / N, a = dir + bend * t + wind * Math.sin(t * Math.PI * 2 * waves + ph) * Math.min(1, t * 5);
         C.push([x, y]); heading.push(a); x += (L / N) * Math.cos(a); y += (L / N) * Math.sin(a);
       }
+      for (let k = 0; k <= N; k += 2) rootPts.push([C[k][0], C[k][1], wAt(k)]);
       const edge = (side) => C.map(([px, py], k) => { const [x2, y2] = C[Math.min(N, k + 1)], [x1, y1] = C[Math.max(0, k - 1)], d = Math.hypot(x2 - x1, y2 - y1) || 1, w = wAt(k); return [px + (-(y2 - y1) / d) * w * side, py + ((x2 - x1) / d) * w * side]; });
       const Lp = edge(1), Rp = edge(-1), P = (a) => a.map(([px, py], k) => `${k ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
       bark.append(svgEl('path', { d: P(Lp) + P(Rp.slice().reverse()).replace('M', 'L') + 'Z', class: 'bark-fill root-fill' }));
@@ -661,22 +668,94 @@ function pageTimeline(q) {
       for (const off of [-0.5, -0.18, 0.18, 0.5]) bark.append(svgEl('path', { d: C.slice(2, N - 3).map(([px, py], k) => { const i = k + 2, [x2, y2] = C[i + 1], [x1, y1] = C[i - 1], d = Math.hypot(x2 - x1, y2 - y1) || 1, w = wAt(i) * off; return `${k ? 'L' : 'M'}${(px + (-(y2 - y1) / d) * w).toFixed(1)},${(py + ((x2 - x1) / d) * w).toFixed(1)}`; }).join(''), class: 'bark-mid', 'stroke-width': 1.3, fill: 'none', 'stroke-linecap': 'round' }));
       if (depth < 2) { // smaller roots forking off, each starting exactly on its parent and twisting in its own way
         const fork = (frac, side, lenK, widK) => { const i = Math.round(N * frac); root(C[i][0], C[i][1], heading[i] + side * (0.5 + rnd() * 0.3), L * lenK, wBase * widK, side * (0.3 + rnd() * 0.4), 0.5 + rnd() * 0.4, depth + 1); };
-        fork(0.3, 1, 0.6, 0.5);
+        fork(0.3, 1, 0.62, 0.55);
         if (depth === 0 && L > B * 5) fork(0.6, -1, 0.5, 0.36);
       }
     };
     // eight roots spread round the trunk. Each runs until it reaches the edge of the stage (the edge of the page, sideways), winding as it goes.
     const reach = (ox, oy, a) => { const dx = Math.cos(a), dy = Math.sin(a), tx = dx > 0.001 ? (SW - ox) / dx : dx < -0.001 ? -ox / dx : Infinity, ty = dy > 0.001 ? (SH - oy) / dy : dy < -0.001 ? -oy / dy : Infinity; return Math.max(B * 3, Math.min(tx, ty)); };
-    [[0.1, 1.0], [0.9, 0.85], [1.65, 1.1], [2.4, 0.9], [3.04, 1.0], [3.85, 0.85], [4.6, 1.05], [5.5, 0.9]].forEach(([a, wK], i) => {
-      const aj = a + (rnd() - 0.5) * 0.18, [ox, oy] = pt(outer - B * 0.8 + wob(aj, B * 0.22), aj), side = i % 2 ? -1 : 1;
-      root(ox, oy, aj, reach(ox, oy, aj) * (1.12 + rnd() * 0.08), B * wK * 1.55, side * (0.15 + rnd() * 0.3), 0.6 + rnd() * 0.35); // the extra length makes up for the wandering, so the tip really gets there
+    // nine roots at random spots (a fixed seed, so it is the same trunk every visit): some bunch together, some leave a wide gap, and each has its own thickness
+    const gaps = Array.from({ length: 9 }, () => 0.42 + rnd() * 1.0), gapSum = gaps.reduce((x, y) => x + y, 0);
+    let ang = rnd() * Math.PI * 2;
+    gaps.forEach((g, i) => {
+      ang += (g / gapSum) * Math.PI * 2;
+      const wK = 0.85 + rnd() * 0.55, [ox, oy] = pt(outer - B * 0.8 + wob(ang, B * 0.22), ang), side = i % 2 ? -1 : 1;
+      root(ox, oy, ang, reach(ox, oy, ang) * (1.12 + rnd() * 0.08), B * wK * 2.0, side * (0.15 + rnd() * 0.3), 0.6 + rnd() * 0.35); // the extra length makes up for the wandering, so the tip really gets there
     });
+    // ---- the ground around the trunk, seen from above: soil along the roots, grass, plants, flowers, mushrooms, and a few insects.
+    // Everything is placed near the roots (never on them), from the same fixed seed, so the scene is the same every visit.
+    const u = Math.max(14, B * 0.62), K = Math.min(2.4, Math.max(0.7, (SW * SH) / (1280 * 1058))) * 1.5;
+    const P2 = (v) => v.toFixed(1), R = (a, b) => a + rnd() * (b - a), pick = (a) => a[Math.floor(rnd() * a.length)];
+    const grp = (x, y, rot = 0, sc = 1) => svgEl('g', { transform: `translate(${P2(x)} ${P2(y)}) rotate(${P2(rot)}) scale(${sc.toFixed(2)})` });
+    const add = (g, ...kids) => { for (const k of kids) g.append(k); return g; };
+    const blob = (x, y, r, irr = 0.3, n = 12) => { // a soft irregular patch
+      const p = Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2, rr = r * (1 - irr / 2 + rnd() * irr); return [x + rr * Math.cos(a), y + rr * Math.sin(a)]; });
+      const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], m0 = mid(p[n - 1], p[0]);
+      return `M${P2(m0[0])},${P2(m0[1])}` + p.map((q, i) => { const m = mid(q, p[(i + 1) % n]); return `Q${P2(q[0])},${P2(q[1])} ${P2(m[0])},${P2(m[1])}`; }).join('') + 'Z';
+    };
+    const grass = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.3)); const n = 8 + Math.floor(rnd() * 6); for (let i = 0; i < n; i++) { const l = u * R(0.9, 1.7), c = (rnd() - 0.5) * l * 0.5; add(g, add(svgEl('g', { transform: `rotate(${P2((i / n) * 360 + R(-14, 14))})` }), svgEl('path', { d: `M0,-1.5Q${P2(l * 0.5)},${P2(-1.5 + c)} ${P2(l)},${P2(c)}Q${P2(l * 0.5)},${P2(1.5 + c)} 0,1.5Z`, class: i % 2 ? 'grassA' : 'grassB' }))); } return g; };
+    const plant = (x, y) => { const g = grp(x, y, R(0, 360), R(0.85, 1.25)), n = 6 + Math.floor(rnd() * 3), l = u * R(1.3, 1.9); for (let i = 0; i < n; i++) add(g, add(svgEl('g', { transform: `rotate(${P2((i / n) * 360 + R(-8, 8))})` }), svgEl('path', { d: `M0,0C${P2(l * 0.3)},${P2(-l * 0.3)} ${P2(l * 0.75)},${P2(-l * 0.3)} ${P2(l)},0C${P2(l * 0.75)},${P2(l * 0.3)} ${P2(l * 0.3)},${P2(l * 0.3)} 0,0Z`, class: i % 2 ? 'leafA' : 'leafB' }), svgEl('path', { d: `M${P2(l * 0.1)},0L${P2(l * 0.85)},0`, class: 'vein' }))); return g; };
+    const clover = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.2)); for (const a of [0, 120, 240]) add(g, svgEl('circle', { cx: P2(u * 0.4 * Math.cos((a * Math.PI) / 180)), cy: P2(u * 0.4 * Math.sin((a * Math.PI) / 180)), r: P2(u * 0.36), class: 'leafA' })); return g; };
+    const shadow = (rx, ry, dx = 1.6, dy = 2.6) => svgEl('ellipse', { cx: P2(dx), cy: P2(dy), rx: P2(rx), ry: P2(ry), class: 'shade' });
+    const flower = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.25)), col = pick(['#f4a6c0', '#f7d44c', '#ffffff', '#b99be0', '#f08a4b', '#e86a8a']), n = 5 + Math.floor(rnd() * 3); add(g, shadow(u * 0.85, u * 0.85)); for (let i = 0; i < n; i++) add(g, add(svgEl('g', { transform: `rotate(${P2((i / n) * 360)}) translate(${P2(u * 0.5)} 0)` }), svgEl('ellipse', { rx: P2(u * 0.5), ry: P2(u * 0.27), fill: col, stroke: 'rgb(60 40 30 / .3)', 'stroke-width': 0.8 }))); add(g, svgEl('circle', { r: P2(u * 0.22), fill: col === '#f7d44c' ? '#b8741a' : '#f2c230', stroke: 'rgb(60 40 30 / .35)', 'stroke-width': 0.8 })); return g; };
+    const mushroom = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.3)), kind = pick([['#c9372c', '#fff'], ['#c9372c', '#fff'], ['#a9744a', '#d8b98f'], ['#d9c3a0', '#a88a62']]), r = u * 0.75; add(g, shadow(r, r, 2, 3), svgEl('circle', { r: P2(r), fill: kind[0], stroke: 'rgb(30 15 10 / .45)', 'stroke-width': 1.4 }), svgEl('circle', { r: P2(r * 0.62), fill: 'none', stroke: 'rgb(0 0 0 / .12)', 'stroke-width': 1 }), svgEl('ellipse', { cx: P2(-r * 0.3), cy: P2(-r * 0.32), rx: P2(r * 0.3), ry: P2(r * 0.17), fill: 'rgb(255 255 255 / .28)', transform: 'rotate(-35)' })); for (let i = 0; i < 6; i++) { const a = rnd() * 6.28, d = r * R(0.15, 0.7); add(g, svgEl('circle', { cx: P2(d * Math.cos(a)), cy: P2(d * Math.sin(a)), r: P2(r * R(0.08, 0.16)), fill: kind[1], opacity: 0.92 })); } return g; };
+    const ladybug = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.1)); add(g, shadow(u * 0.5, u * 0.6)); for (const s of [-1, 1]) for (const k of [-0.25, 0.1, 0.4]) add(g, svgEl('path', { d: `M${P2(s * u * 0.4)},${P2(u * k)}l${P2(s * u * 0.28)},${P2(u * 0.14)}`, class: 'legs' })); add(g, svgEl('ellipse', { rx: P2(u * 0.46), ry: P2(u * 0.56), fill: '#d52a1f', stroke: '#1a0e0b', 'stroke-width': 1.3 }), svgEl('path', { d: `M0,${P2(-u * 0.5)}L0,${P2(u * 0.56)}`, stroke: '#1a0e0b', 'stroke-width': 1.2 }), svgEl('circle', { cy: P2(-u * 0.6), r: P2(u * 0.24), fill: '#1a0e0b' }), svgEl('ellipse', { cx: P2(-u * 0.1), cy: P2(-u * 0.12), rx: P2(u * 0.1), ry: P2(u * 0.18), fill: 'rgb(255 255 255 / .35)' })); for (const [sx, sy] of [[-0.24, -0.22], [0.24, -0.22], [-0.27, 0.12], [0.27, 0.12], [-0.14, 0.38], [0.14, 0.38]]) add(g, svgEl('circle', { cx: P2(u * sx), cy: P2(u * sy), r: P2(u * 0.09), fill: '#1a0e0b' })); return g; };
+    const butterfly = (x, y) => {
+      const g = grp(x, y, R(0, 360), R(1, 1.5)), c = pick([['#f0892f', '#2b1a10'], ['#4f8fe0', '#101c36'], ['#f4d24a', '#3a2a08'], ['#c46bd6', '#2a1033']]);
+      const wing = (s) => add(svgEl('g', { transform: `scale(${s} 1)` }), svgEl('path', { d: `M0,0C${P2(u * 0.3)},${P2(-u * 0.95)} ${P2(u * 1.35)},${P2(-u * 1.15)} ${P2(u * 1.25)},${P2(-u * 0.2)}C${P2(u * 1.1)},${P2(u * 0.15)} ${P2(u * 0.4)},${P2(u * 0.1)} 0,0Z`, fill: c[0], stroke: c[1], 'stroke-width': 1.3 }), svgEl('path', { d: `M0,0C${P2(u * 0.5)},${P2(u * 0.1)} ${P2(u * 1.05)},${P2(u * 0.5)} ${P2(u * 0.72)},${P2(u * 0.98)}C${P2(u * 0.4)},${P2(u * 1.12)} ${P2(u * 0.1)},${P2(u * 0.5)} 0,0Z`, fill: c[0], stroke: c[1], 'stroke-width': 1.3, opacity: 0.95 }), svgEl('circle', { cx: P2(u * 0.82), cy: P2(-u * 0.5), r: P2(u * 0.14), fill: 'rgb(255 255 255 / .8)' }), svgEl('circle', { cx: P2(u * 0.55), cy: P2(u * 0.62), r: P2(u * 0.09), fill: 'rgb(255 255 255 / .7)' }), svgEl('path', { d: `M${P2(u * 0.15)},${P2(-u * 0.3)}C${P2(u * 0.5)},${P2(-u * 0.7)} ${P2(u * 0.9)},${P2(-u * 0.75)} ${P2(u * 1.05)},${P2(-u * 0.35)}`, fill: 'none', stroke: c[1], 'stroke-width': 0.9, opacity: 0.55 }));
+      return add(g, shadow(u * 1.1, u * 0.7, 6, 8), wing(1), wing(-1), svgEl('ellipse', { ry: P2(u * 0.5), rx: P2(u * 0.09), cy: P2(u * 0.05), fill: c[1] }), svgEl('path', { d: `M0,${P2(-u * 0.48)}Q${P2(-u * 0.2)},${P2(-u * 0.85)} ${P2(-u * 0.4)},${P2(-u * 0.9)}M0,${P2(-u * 0.48)}Q${P2(u * 0.2)},${P2(-u * 0.85)} ${P2(u * 0.4)},${P2(-u * 0.9)}`, fill: 'none', stroke: c[1], 'stroke-width': 0.9 }));
+    };
+    const bee = (x, y) => { const g = grp(x, y, R(0, 360), R(0.9, 1.15)); return add(g, shadow(u * 0.5, u * 0.7, 5, 7), svgEl('ellipse', { cx: P2(-u * 0.38), cy: P2(-u * 0.12), rx: P2(u * 0.5), ry: P2(u * 0.24), fill: 'rgb(235 245 255 / .75)', stroke: 'rgb(60 70 90 / .45)', 'stroke-width': 0.8, transform: `rotate(-25 ${P2(-u * 0.2)} 0)` }), svgEl('ellipse', { cx: P2(u * 0.38), cy: P2(-u * 0.12), rx: P2(u * 0.5), ry: P2(u * 0.24), fill: 'rgb(235 245 255 / .75)', stroke: 'rgb(60 70 90 / .45)', 'stroke-width': 0.8, transform: `rotate(25 ${P2(u * 0.2)} 0)` }), svgEl('ellipse', { cy: P2(u * 0.3), rx: P2(u * 0.3), ry: P2(u * 0.5), fill: '#f2c230', stroke: '#2a1c06', 'stroke-width': 1.1 }), svgEl('path', { d: `M${P2(-u * 0.29)},${P2(u * 0.2)}Q0,${P2(u * 0.28)} ${P2(u * 0.29)},${P2(u * 0.2)}M${P2(-u * 0.27)},${P2(u * 0.46)}Q0,${P2(u * 0.54)} ${P2(u * 0.27)},${P2(u * 0.46)}`, fill: 'none', stroke: '#2a1c06', 'stroke-width': 3 }), svgEl('circle', { cy: P2(-u * 0.18), r: P2(u * 0.24), fill: '#3a2a10' }), svgEl('circle', { cy: P2(-u * 0.5), r: P2(u * 0.16), fill: '#2a1c06' })); };
+    const beetle = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.1)); return add(g, shadow(u * 0.4, u * 0.55), svgEl('ellipse', { rx: P2(u * 0.38), ry: P2(u * 0.56), fill: '#1f4a36', stroke: '#08150f', 'stroke-width': 1.2 }), svgEl('path', { d: `M0,${P2(-u * 0.4)}L0,${P2(u * 0.55)}`, stroke: '#08150f', 'stroke-width': 1 }), svgEl('ellipse', { cx: P2(-u * 0.14), cy: P2(-u * 0.05), rx: P2(u * 0.08), ry: P2(u * 0.22), fill: 'rgb(180 255 220 / .35)' }), svgEl('circle', { cy: P2(-u * 0.62), r: P2(u * 0.2), fill: '#08150f' })); };
+
+    const near = (top) => { // a spot outside the trunk: half the time close to a root, half the time anywhere on the ground; clear of every root body when `top` is set
+      for (let tries = 0; tries < 30; tries++) {
+        let x, y;
+        if (rnd() < 0.5) { const [rx, ry, w] = pick(rootPts), a = rnd() * Math.PI * 2, d = w + u * R(0.5, 3.2) + (top ? u * 0.4 : 0); x = rx + d * Math.cos(a); y = ry + d * Math.sin(a); }
+        else { x = R(8, SW - 8); y = R(8, SH - 8); }
+        if (x < 8 || y < 8 || x > SW - 8 || y > SH - 8 || Math.hypot(x - cx, y - cy) < outer + u * 0.4) continue;
+        if (rootPts.some(([px, py, pw]) => Math.hypot(x - px, y - py) < pw + u * (top ? 0.75 : 0.25))) continue;
+        return [x, y];
+      }
+      return null;
+    };
+    // ---- the ground: one soil bed under everything, then darker and lighter patches, speckles, and deeper shade hugging every root
+    gGround.append(svgEl('rect', { x: 0, y: 0, width: SW, height: SH, class: 'soil' }));
+    let dark = '', light = '', shade = '';
+    for (let i = 0; i < Math.round(46 * K); i++) dark += blob(R(0, SW), R(0, SH), u * R(1.3, 3.6), 0.55);
+    for (let i = 0; i < Math.round(30 * K); i++) light += blob(R(0, SW), R(0, SH), u * R(1.1, 3), 0.55);
+    rootPts.forEach(([x, y, w], i) => { if (i % 4 === 0) shade += blob(x + R(-4, 4), y + R(-4, 4), w * 1.25 + u * 0.8, 0.5); });
+    gGround.append(svgEl('path', { d: dark, class: 'soil2', opacity: 0.55 }), svgEl('path', { d: light, class: 'soil3', opacity: 0.6 }), svgEl('path', { d: shade, class: 'soil2', opacity: 0.8 }));
+    let dotsA = '', dotsB = '';
+    for (let i = 0; i < Math.round(380 * K); i++) { const x = R(2, SW - 2), y = R(2, SH - 2); if (Math.hypot(x - cx, y - cy) < outer) continue; if (i % 2) dotsA += `M${P2(x)} ${P2(y)}h.1`; else dotsB += `M${P2(x)} ${P2(y)}h.1`; }
+    gGround.append(svgEl('path', { d: dotsA, class: 'speck1' }), svgEl('path', { d: dotsB, class: 'speck2' }));
+    const pebble = (x, y, r) => add(grp(x, y, R(0, 180)), svgEl('ellipse', { cx: 1, cy: 1.4, rx: P2(r * 1.05), ry: P2(r * 0.8), class: 'shade' }), svgEl('ellipse', { rx: P2(r), ry: P2(r * R(0.66, 0.9)), class: pick(['pebble', 'pebble2', 'pebble3']), stroke: 'rgb(30 20 10 / .35)', 'stroke-width': 0.8 }), svgEl('ellipse', { cx: P2(-r * 0.28), cy: P2(-r * 0.25), rx: P2(r * 0.34), ry: P2(r * 0.2), fill: 'rgb(255 255 255 / .3)' }));
+    for (let i = 0; i < Math.round(26 * K); i++) { // pebbles come in little clusters, big and small together
+      const p = near(false); if (!p) continue;
+      const n = 3 + Math.floor(rnd() * 5);
+      for (let k = 0; k < n; k++) gGround.append(pebble(p[0] + R(-u * 1.1, u * 1.1), p[1] + R(-u * 1.1, u * 1.1), u * R(0.1, 0.34)));
+    }
+    for (let i = 0; i < Math.round(10 * K); i++) { const p = near(false); if (p) gGround.append(pebble(p[0], p[1], u * R(0.45, 0.8))); } // a few big stones
+    const moss = (x, y) => { const g = grp(x, y, R(0, 360)); let d = ''; for (let k = 0; k < 4; k++) d += blob(R(-u, u), R(-u * 0.7, u * 0.7), u * R(0.5, 0.95), 0.5, 9); add(g, svgEl('path', { d, class: 'moss' })); for (let k = 0; k < 10; k++) add(g, svgEl('circle', { cx: P2(R(-u * 1.2, u * 1.2)), cy: P2(R(-u, u)), r: P2(u * R(0.05, 0.12)), fill: pick(['#9acb6e', '#7bb35a', '#b6dc8a']), opacity: 0.8 })); return g; };
+    const twig = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.4)), l = u * R(1.6, 3); return add(g, svgEl('path', { d: `M${P2(-l / 2)},0Q${P2(-l * 0.1)},${P2(R(-4, 4))} ${P2(l / 2)},${P2(R(-3, 3))}M${P2(-l * 0.05)},0l${P2(l * 0.18)},${P2(-u * 0.5)}M${P2(l * 0.2)},${P2(R(-1, 1))}l${P2(l * 0.14)},${P2(u * 0.4)}`, class: 'twig' }), svgEl('path', { d: `M${P2(-l / 2)},0Q${P2(-l * 0.1)},${P2(R(-4, 4))} ${P2(l / 2)},${P2(R(-3, 3))}`, class: 'twig2' })); };
+    const fallen = (x, y) => { const g = grp(x, y, R(0, 360), R(0.9, 1.5)), l = u * 1.2, col = pick(['#b5651d', '#c98a2b', '#9a3b1e', '#7d8c2e', '#c4572a']); return add(g, shadow(l * 0.55, l * 0.3, 1.5, 2.2), svgEl('path', { d: `M${P2(-l * 0.5)},0C${P2(-l * 0.25)},${P2(-l * 0.42)} ${P2(l * 0.25)},${P2(-l * 0.42)} ${P2(l * 0.5)},0C${P2(l * 0.25)},${P2(l * 0.42)} ${P2(-l * 0.25)},${P2(l * 0.42)} ${P2(-l * 0.5)},0Z`, fill: col, stroke: 'rgb(40 20 8 / .45)', 'stroke-width': 0.9 }), svgEl('path', { d: `M${P2(-l * 0.62)},0L${P2(l * 0.42)},0M${P2(-l * 0.15)},0l${P2(l * 0.14)},${P2(-l * 0.18)}M${P2(l * 0.1)},0l${P2(l * 0.14)},${P2(l * 0.17)}`, fill: 'none', stroke: 'rgb(40 20 8 / .5)', 'stroke-width': 0.9, 'stroke-linecap': 'round' })); };
+    const acorn = (x, y) => { const g = grp(x, y, R(0, 360)); return add(g, shadow(u * 0.32, u * 0.4, 1.5, 2.4), svgEl('ellipse', { rx: P2(u * 0.28), ry: P2(u * 0.38), fill: '#b8873f', stroke: 'rgb(40 20 8 / .5)', 'stroke-width': 0.9 }), svgEl('circle', { cy: P2(-u * 0.14), r: P2(u * 0.3), fill: '#7a5326', stroke: 'rgb(40 20 8 / .5)', 'stroke-width': 0.9 }), svgEl('path', { d: `M${P2(-u * 0.2)},${P2(-u * 0.18)}h${P2(u * 0.4)}M${P2(-u * 0.14)},${P2(-u * 0.05)}h${P2(u * 0.28)}`, stroke: 'rgb(30 15 5 / .4)', 'stroke-width': 0.8 }), svgEl('circle', { cy: P2(-u * 0.5), r: P2(u * 0.06), fill: '#4a3118' })); };
+    const worm = (x, y) => { const g = grp(x, y, R(0, 360), R(0.8, 1.2)), l = u * 2; return add(g, svgEl('path', { d: `M${P2(-l / 2)},0C${P2(-l * 0.3)},${P2(-u * 0.7)} ${P2(-l * 0.1)},${P2(u * 0.7)} ${P2(l * 0.1)},0S${P2(l * 0.35)},${P2(-u * 0.6)} ${P2(l / 2)},${P2(-u * 0.1)}`, fill: 'none', stroke: 'rgb(40 20 10 / .3)', 'stroke-width': P2(u * 0.3), 'stroke-linecap': 'round', transform: 'translate(1.5 2)' }), svgEl('path', { d: `M${P2(-l / 2)},0C${P2(-l * 0.3)},${P2(-u * 0.7)} ${P2(-l * 0.1)},${P2(u * 0.7)} ${P2(l * 0.1)},0S${P2(l * 0.35)},${P2(-u * 0.6)} ${P2(l / 2)},${P2(-u * 0.1)}`, fill: 'none', stroke: '#c98a86', 'stroke-width': P2(u * 0.26), 'stroke-linecap': 'round' }), svgEl('path', { d: `M${P2(l * 0.28)},${P2(-u * 0.38)}l.1,${P2(u * 0.2)}`, stroke: '#e0b0aa', 'stroke-width': P2(u * 0.14), 'stroke-linecap': 'round' })); };
+    const snail = (x, y) => { const g = grp(x, y, R(0, 360), R(0.9, 1.2)); return add(g, shadow(u * 0.9, u * 0.5, 2, 3), svgEl('path', { d: `M${P2(u * 0.3)},${P2(u * 0.2)}C${P2(u * 0.9)},${P2(u * 0.3)} ${P2(u * 1.3)},${P2(u * 0.1)} ${P2(u * 1.5)},${P2(-u * 0.05)}C${P2(u * 1.3)},${P2(-u * 0.25)} ${P2(u * 0.8)},${P2(-u * 0.3)} ${P2(u * 0.3)},${P2(-u * 0.25)}Z`, fill: '#c9b48a', stroke: 'rgb(60 40 20 / .5)', 'stroke-width': 0.9 }), svgEl('path', { d: `M${P2(u * 1.45)},${P2(-u * 0.1)}l${P2(u * 0.2)},${P2(-u * 0.25)}M${P2(u * 1.5)},${P2(u * 0.0)}l${P2(u * 0.25)},${P2(-u * 0.05)}`, stroke: '#a89268', 'stroke-width': 1.2, 'stroke-linecap': 'round' }), svgEl('circle', { r: P2(u * 0.55), fill: '#a8703a', stroke: 'rgb(50 28 10 / .6)', 'stroke-width': 1 }), svgEl('path', { d: `M0,0m${P2(u * 0.08)},0a${P2(u * 0.08)},${P2(u * 0.08)} 0 1 1 ${P2(-u * 0.16)},0a${P2(u * 0.2)},${P2(u * 0.2)} 0 1 1 ${P2(u * 0.4)},0a${P2(u * 0.33)},${P2(u * 0.33)} 0 1 1 ${P2(-u * 0.66)},0`, fill: 'none', stroke: 'rgb(50 28 10 / .55)', 'stroke-width': 1 })); };
+    const puff = (x, y) => { const g = grp(x, y, R(0, 360)); for (let k = 0; k < 16; k++) add(g, svgEl('path', { d: `M0,0L${P2(u * 0.6 * Math.cos((k / 16) * 6.28))},${P2(u * 0.6 * Math.sin((k / 16) * 6.28))}`, stroke: 'rgb(255 255 255 / .85)', 'stroke-width': 1 })); return add(g, svgEl('circle', { r: P2(u * 0.07), fill: '#cfc7b0' }), svgEl('circle', { r: P2(u * 0.62), fill: 'rgb(255 255 255 / .22)', stroke: 'rgb(255 255 255 / .55)', 'stroke-width': 0.8 })); };
+    const place = (count, draw, layer) => { for (let i = 0; i < Math.round(count * K); i++) { const p = near(layer === gTop); if (p) layer.append(draw(p[0], p[1])); } };
+    place(30, moss, gMid); place(12, twig, gMid); place(10, fallen, gMid); place(6, acorn, gMid); place(2, worm, gMid); place(2, snail, gMid);   // on the ground, under the roots' edges
+    place(60, grass, gMid); place(22, plant, gMid); place(14, clover, gMid);
+    place(40, flower, gTop); place(20, mushroom, gTop); place(8, ladybug, gTop); place(7, puff, gTop);                                              // on top
+    place(6, butterfly, gTop); place(5, bee, gTop); place(4, beetle, gTop);
+    bark.append(gTop);
     bark.append(svgEl('circle', { cx, cy, r: Math.max(5, ringH * 0.22), class: 'pith' })); // the pith, where it all started
   }
 
   const pill = h('span', { class: 'flow-pill', 'aria-hidden': 'true' });
+  let zooming = false; // while the trunk is being zoomed, the date pill waits: measuring the page every frame would slow the zoom
   function pillUpdate() { // the date of the photo nearest the middle of the screen
-    if (!centres.length || !stage.isConnected) return;
+    if (!centres.length || !stage.isConnected || zooming) return;
     const r = stage.getBoundingClientRect(), hdr = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hdr')) || 64;
     const vx = Math.min(innerWidth, r.right) / 2 + Math.max(0, r.left) / 2 - r.left, vy = (hdr + innerHeight) / 2 - r.top;
     let best = 0, bd = Infinity;
@@ -687,42 +766,55 @@ function pageTimeline(q) {
   addEventListener('scroll', () => requestAnimationFrame(pillUpdate), { passive: true });
   wrap.addEventListener('scroll', () => requestAnimationFrame(pillUpdate), { passive: true });
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const zoom = (d) => { // zoom about the middle of the trunk: it stays where it is on screen while the rings grow or shrink around it
-    const v = Math.min(LEVELS.length - 1, Math.max(0, level + d));
-    if (v === level) return false;
-    const before = stage.getBoundingClientRect().top + cyS, s0 = curS;
-    level = v; store.set(v); layout();
-    const dy = stage.getBoundingClientRect().top + cyS - before;
+  // Zoom about the middle of the trunk: it stays where it is on screen while the rings grow or shrink around it.
+  let settleT = 0;
+  const zoomTo = (t) => {
+    t = Math.min(1, Math.max(0, t));
+    if (t === tNow) return;
+    const before = cyS; // the stage's top edge does not move when it is resized, so the middle only needs to move by how much its own centre line moved
+    tNow = t; zooming = true; store.set(t.toFixed(4)); layout(true); clearTimeout(settleT); settleT = setTimeout(() => { zooming = false; layout(); }, 160);
+    const dy = cyS - before;
     if (dy) scrollTo({ top: scrollY + dy, behavior: 'instant' });
-    if (!calm && s0 && curS) { stage.style.transformOrigin = `${cxS}px ${cyS}px`; stage.animate([{ transform: `scale(${s0 / curS})` }, { transform: 'scale(1)' }], { duration: 220, easing: 'cubic-bezier(.2, .7, .2, 1)' }); } // glide from the old size to the new
-    minus.disabled = level === 0; plus.disabled = level === LEVELS.length - 1;
-    return true;
   };
-  const minus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom out: more photos at once', title: 'Zoom out', onclick: () => zoom(-1) }, '−');
-  const plus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom in: bigger photos', title: 'Zoom in', onclick: () => zoom(1) }, '+');
-  minus.disabled = level === 0; plus.disabled = level === LEVELS.length - 1;
+  let wantRaf = 0, want = 0, glideRaf = 0, glideTo = null;
+  const request = (t) => { cancelAnimationFrame(glideRaf); glideTo = null; want = t; if (!wantRaf) wantRaf = requestAnimationFrame(() => { wantRaf = 0; zoomTo(want); }); }; // many input events, one redraw per frame
+  const glide = (target) => { // a wheel notch eases to its new size instead of jumping
+    cancelAnimationFrame(glideRaf); glideTo = target;
+    const from = tNow, t0 = performance.now(), dur = calm ? 1 : 220;
+    const step = (now) => { const p = Math.min(1, (now - t0) / dur), e = 1 - (1 - p) ** 3; zoomTo(from + (target - from) * e); if (p < 1) glideRaf = requestAnimationFrame(step); else glideTo = null; };
+    glideRaf = requestAnimationFrame(step);
+  };
+  const slider = h('input', { type: 'range', class: 'flow-slider', min: 0, max: 1000, step: 1, value: 500, 'aria-label': 'Zoom', title: 'Zoom: drag right for bigger photos', oninput: () => request(+slider.value / 1000) });
+  const paintSlider = () => { const t = tNow ?? 0.5; slider.value = Math.round(t * 1000); slider.style.setProperty('--p', t * 100 + '%'); slider.setAttribute('aria-valuetext', `Zoom ${Math.round(t * 100)} percent`); }; // the fill follows the thumb; wheel and pinch move it too
 
   let acc = 0, lastWheel = 0;
   stage.addEventListener('wheel', (e) => { // scroll or pinch while over the trunk zooms it; at either end of the range the page scrolls as usual
-    const dir = e.deltaY < 0 ? 1 : -1;
-    if (dir > 0 ? level >= LEVELS.length - 1 : level <= 0) { acc = 0; return; }
+    const inward = e.deltaY < 0;
+    if (inward ? tNow >= 0.999 : tNow <= 0.001) { acc = 0; return; }
     e.preventDefault();
-    acc += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : 1) * (e.ctrlKey ? 3 : 1); // a trackpad pinch arrives as many tiny ctrl-wheel events
-    if (acc < 60 || Date.now() - lastWheel < 90) return;
-    acc = 0; lastWheel = Date.now(); zoom(dir);
+    const [lo, hi] = bounds();
+    if (e.ctrlKey) { request(tOf(sOf(glideTo ?? tNow, lo, hi) * Math.exp(-e.deltaY * 0.012), lo, hi)); return; } // a trackpad pinch: continuous
+    acc += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : 1);
+    if (acc < 50 || Date.now() - lastWheel < 60) return;
+    acc = 0; lastWheel = Date.now(); glide(Math.min(1, Math.max(0, (glideTo ?? tNow) + (inward ? 0.09 : -0.09))));
   }, { passive: false });
   const ptr = new Map(); let pinch0 = 0;
   const dist = () => { const [p, r] = [...ptr.values()]; return Math.hypot(p.x - r.x, p.y - r.y); };
   stage.addEventListener('pointerdown', (e) => { ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2) pinch0 = dist(); });
-  stage.addEventListener('pointermove', (e) => { if (!ptr.has(e.pointerId)) return; ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2 && pinch0) { const ratio = dist() / pinch0; if (ratio > 1.18) { zoom(1); pinch0 = dist(); } else if (ratio < 0.85) { zoom(-1); pinch0 = dist(); } } });
+  stage.addEventListener('pointermove', (e) => { // two fingers: the trunk follows the pinch continuously
+    if (!ptr.has(e.pointerId)) return;
+    ptr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptr.size === 2 && pinch0) { const [lo, hi] = bounds(), d = dist(); request(tOf(sOf(want || tNow, lo, hi) * (d / pinch0), lo, hi)); pinch0 = d; }
+  });
   const up = (e) => { ptr.delete(e.pointerId); if (ptr.size < 2) pinch0 = 0; };
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
 
   const sw = (key, label) => h('a', { class: 'chip', href: key === 'newest' ? '#/timeline' : '#/timeline?order=oldest', 'aria-pressed': String(order === key) }, label);
-  new ResizeObserver(() => { layout(); requestAnimationFrame(() => stage.classList.add('ready')); }).observe(wrap);
+  let seenW = 0; // only a change in width needs a full redraw: zooming changes the height every frame, and that must not trigger one
+  new ResizeObserver(() => { const w = wrap.clientWidth; if (w === seenW) return; seenW = w; layout(); requestAnimationFrame(() => stage.classList.add('ready')); }).observe(wrap);
   queueMicrotask(layout);
-  return h('div', { class: 'page flow-page' }, pageHead('The Trunk of Time', 'Every photo, one continuous line winding out from the heart of the trunk, one ring at a time: the oldest in the middle, the newest on the bark. Scroll or pinch over the trunk to zoom in and out around its middle, or use + and −; click any photo to view it.'),
-    list.length ? h('div', { class: 'flow-bar' }, h('div', { class: 'chips', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest'), sw('oldest', 'Oldest')), pill, h('div', { class: 'flow-zoom', role: 'group', 'aria-label': 'Zoom' }, minus, plus)) : null,
+  return h('div', { class: 'page flow-page' }, pageHead('The Trunk of Time', 'Every photo, one continuous line winding out from the heart of the trunk, one ring at a time: the oldest in the middle, the newest on the bark. Scroll or pinch over the trunk to zoom in and out around its middle, or drag the zoom slider; click any photo to view it.'),
+    list.length ? h('div', { class: 'flow-bar' }, h('div', { class: 'chips', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest'), sw('oldest', 'Oldest')), pill, h('div', { class: 'flow-zoom', role: 'group', 'aria-label': 'Zoom' }, slider)) : null,
     list.length ? wrap : empty('The trunk grows with the first photo.'));
 }
 
@@ -821,29 +913,42 @@ function pageAbout() {
   const since = oldest?.taken?.local ? wall(oldest.taken.local).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'long', year: 'numeric' }) : null;
 
   const facts = h('p', { class: 'about-facts' }, h('strong', {}, countLabel(photos.length, 'photo')), videos ? [' and ', h('strong', {}, countLabel(videos, 'video'))] : null, places ? [' from ', h('strong', {}, countLabel(places, 'place'))] : null,
-    since ? `, kept since ${since}` : null, topCam ? [', mostly on the ', h('strong', {}, topCam)] : null, '.');
+    since ? `, kept since ${since}` : null, topCam ? [', mainly on the ', h('strong', {}, topCam)] : null, '.');
   const frames = photos.slice().sort(SORTS.newest).slice(0, 6);
-  // A vine that climbs the whole left edge of the portrait: a gently swaying stem, with leaves alternating along it.
-  const vine = (() => {
-    const H = 520, X = (y) => 36 + 11 * Math.sin(y / 54 + 1);
-    let d = '', leaves = '';
-    for (let y = H; y >= 0; y -= 8) d += `${y === H ? 'M' : 'L'}${X(y).toFixed(1)} ${y}`;
-    for (let y = H - 26, i = 0, side = 1; y > 14; y -= 36 + (i % 3) * 6, i++) {
+  // A vine that runs all the way round the portrait's arch, following its curve. It is redrawn to fit whenever the portrait changes size.
+  const vineHolder = h('span', { class: 'vine-arch', 'aria-hidden': 'true' }), archEl = h('div', { class: 'arch' }, h('img', { src: CFG.portrait, alt: `Portrait of ${CFG.owner}`, draggable: 'false' }));
+  const drawArchVine = () => {
+    const W = archEl.offsetWidth, H = archEl.offsetHeight;
+    if (!W || !H) return;
+    // The vine runs round the arch just outside its edge: up the left side, over the top and down the right side.
+    const M = 44, g = W < 300 ? 12 : 16, r = W / 2, cx = M + r, cy = M + r, R = r + g, rc = 14 + g, xl = M - g, xr = M + W + g, yb = M + H + g, gap = 22;
+    const seg = [ // up the left side, over the top, down the right side; the bottom under the portrait is left clear
+      { len: yb - 10 - cy, at: (u) => ({ x: xl, y: yb - 10 - u, nx: -1, ny: 0 }) },
+      { len: R * Math.PI, at: (u) => { const t = Math.PI + u / R; return { x: cx + R * Math.cos(t), y: cy + R * Math.sin(t), nx: Math.cos(t), ny: Math.sin(t) }; } },
+      { len: yb - 10 - cy, at: (u) => ({ x: xr, y: cy + u, nx: 1, ny: 0 }) }
+    ];
+    const total = seg.reduce((n, q) => n + q.len, 0), at = (s) => { for (const q of seg) { if (s <= q.len) return q.at(Math.max(0, s)); s -= q.len; } const q = seg.at(-1); return q.at(q.len); };
+    const pts = []; let d = '';
+    for (let s = 0; s <= total; s += 4) { const p = at(s), w = 4.5 * Math.sin(s / 37 + 1) * Math.min(1, s / 50, (total - s) / 50); pts.push({ x: p.x + p.nx * w, y: p.y + p.ny * w }); d += `${s ? 'L' : 'M'}${pts.at(-1).x.toFixed(1)} ${pts.at(-1).y.toFixed(1)}`; }
+    let leaves = '', side = 1, i = 0;
+    for (let s = 22; s < total - 10; s += 30 + (i % 3) * 6, i++) {
+      const k = Math.min(pts.length - 2, Math.round(s / 4)), p = pts[k], q = pts[k + 1], tang = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;
       side = -side;
-      leaves += `<path d="M0 0C6-9 20-9 28 0C20 9 6 9 0 0Z" transform="translate(${X(y).toFixed(1)} ${y}) rotate(${-90 + side * (46 + (i % 4) * 9)}) scale(${(1 + (i % 3) * 0.2).toFixed(2)})" fill="currentColor" opacity="${(0.78 + (i % 3) * 0.1).toFixed(2)}"/>`;
+      leaves += `<path d="M0 0C6-9 20-9 28 0C20 9 6 9 0 0Z" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${(tang + side * (52 + (i % 4) * 7)).toFixed(1)}) scale(${(0.9 + (i % 3) * 0.22).toFixed(2)})" fill="currentColor" opacity="${(0.8 + (i % 3) * 0.1).toFixed(2)}"/>`;
     }
-    return `<svg class="vine-left" viewBox="0 0 72 ${H}" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>${leaves}</svg>`;
-  })();
+    vineHolder.innerHTML = `<svg width="${W + M * 2}" height="${H + M * 2}" viewBox="0 0 ${W + M * 2} ${H + M * 2}"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>${leaves}</svg>`;
+  };
+  if (CFG.portrait) new ResizeObserver(drawArchVine).observe(archEl);
 
   return h('div', { class: 'page about' },
     pageHead('About Me'),
     h('div', { class: 'about-hero' + (CFG.portrait ? '' : ' solo') },
-      CFG.portrait ? h('figure', { class: 'about-portrait' }, h('div', { class: 'arch' }, h('img', { src: CFG.portrait, alt: `Portrait of ${CFG.owner}`, draggable: 'false' })), h('span', { html: vine })) : null,
+      CFG.portrait ? h('figure', { class: 'about-portrait' }, archEl, vineHolder) : null,
       h('div', { class: 'about-copy' },
         h('div', { class: 'prose about-prose', html: md(CFG.bio || '') }),
         facts,
         h('div', { class: 'about-links' }, h('a', { class: 'cta', href: '#/gallery' }, 'Browse the gallery'), h('a', { class: 'alt', href: '#/places' }, 'Where I’ve been'), h('a', { class: 'alt', href: '#/gear' }, 'The gear')),
-        CFG.contact?.trim() ? h('div', { class: 'about-contact' }, h('h2', {}, 'Say hello'), h('div', { class: 'prose', html: md(CFG.contact) })) : null)),
+        CFG.contact?.trim() ? h('div', { class: 'about-contact' }, h('h2', {}, 'Shoot Me a Message 📷'), h('div', { class: 'prose', html: md(CFG.contact) })) : null)),
     frames.length ? h('section', { class: 'band about-frames', 'aria-labelledby': 'frames-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'frames-h' }, 'Lately'), h('a', { href: '#/gallery' }, 'All photos →')),
       h('div', { class: 'frames' }, frames.map((it) => {
         const a = h('a', { class: 'frame', href: withV('#/about', it.id), 'aria-label': it.title || fmtDay(it) || it.file }, h('img', { src: mediaUrl(it, 'thumb.webp'), alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
@@ -938,6 +1043,7 @@ async function boot() {
     return;
   }
   lbCtx.cfg = CFG;
+  setMediaBase(CFG.mediaBase); // optional CDN for media/ (see README)
   VIS = await fetch('data/vision.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((j) => (j?.items ? Vision.buildIndex(j.items) : null)).catch(() => null); // a bonus file: without it search is plain text
   lbCtx.vision = (id) => VIS?.get(id) || null;
   social.init(CFG.social);

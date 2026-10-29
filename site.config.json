@@ -2,12 +2,14 @@
   "siteName": "Verdant Archive",
   "owner": "Karson Shin",
   "tagline": "KarsonShin.jpg",
-  "bio": "Hello everyone! My name is **Karson** and I’m a photographer drawn to capturing the little details, fleeting moments, and unique perspectives that make everyday life feel memorable. From travel and landscapes to street photography and candid moments, I use my cameras to document the world through my lens. This is a collection of images, clips, memories, and pieces worth remembering. Thanks for visiting!",
+  "intro": "Welcome to the **Verdant Archive**, a living archive of places, people, and passing moments. From distant landscapes to familiar streets, this portfolio is where my photographs and videos take root.\n\nSpin the sphere, follow the Trunk of Time, wander the albums, or search by mood. Every frame tells a story, and every moment is my own. This garden is always growing. Stay awhile, and watch it bloom.",
+  "bio": "Hello and welcome! My name is **Karson** and I’m a photographer drawn to capturing the little details, fleeting moments, and unique perspectives that make everyday life feel memorable. From travel and landscapes to street photography and candid moments, I use my cameras to document the world through my lens. This is a collection of images, clips, memories, and pieces worth remembering. Thanks for visiting!",
   "portrait": "media/portrait.webp",
   "basePath": "/The-Verdant-Archive/",
   "watermark": {
-    "widthPct": 14,
+    "widthPct": 11.5,
     "padding": 24,
+    "paddingPct": 1.4,
     "opacity": 0.75,
     "luminanceThreshold": 128
   },
