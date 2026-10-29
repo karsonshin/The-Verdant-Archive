@@ -167,6 +167,19 @@ export function createLightbox(ctx) {
 
   // ---------- info panel ----------
   function row(label, value) { return value ? h('div', { class: 'kv' }, h('dt', {}, label), h('dd', {}, value)) : null; }
+  // A palette read from the photo: click a colour to copy it, or find photos that look like this one.
+  function palette(it) {
+    const rec = ctx.vision?.(it.id);
+    if (!rec?.pal?.length) return null;
+    const flash = (b, t) => { const old = b.dataset.t || b.textContent; b.dataset.t = old; b.textContent = t; setTimeout(() => (b.textContent = old), 1400); };
+    const copy = (text, b, done) => (navigator.clipboard ? navigator.clipboard.writeText(text).then(() => flash(b, done), () => flash(b, text)) : flash(b, text));
+    return h('div', { class: 'pal' },
+      h('div', { class: 'pal-bar', role: 'list', 'aria-label': 'Colours in this photo, largest first' }, rec.pal.map((p) => h('button', { type: 'button', role: 'listitem', class: 'pal-sw', style: `background:${p.hex};flex:${p.pct}`, title: `${p.hex} (${p.pct}%): click to copy`, 'aria-label': `${p.hex}, ${p.pct} percent. Copy`, onclick: (e) => { navigator.clipboard?.writeText(p.hex); e.currentTarget.classList.add('copied'); setTimeout(() => e.currentTarget.classList.remove('copied'), 900); } }))),
+      h('div', { class: 'pal-codes' }, rec.pal.map((p) => h('code', {}, p.hex))),
+      h('div', { class: 'pal-actions' },
+        h('button', { type: 'button', class: 'linkish', onclick: (e) => copy(rec.pal.map((p) => p.hex).join(', '), e.currentTarget, 'Copied') }, 'Copy palette'),
+        h('a', { class: 'linkish', href: `#/gallery?like=${it.id}`, onclick: () => ctx.close(true) }, 'Find photos that look like this')));
+  }
   function renderInfo() {
     const it = item, t = it.taken || {}, cam = it.camera || {}, ex = it.exif || {};
     const wallStr = t.local ? fmtWall(t.local, { dateStyle: 'full', timeStyle: 'short' }) : null;
@@ -189,6 +202,7 @@ export function createLightbox(ctx) {
         row('Lens', cam.lens), row('Exposure', exposure),
         row('Dimensions', `${it.w} × ${it.h}${it.duration ? ` · ${Math.round(it.duration)} s` : ''}`),
         row('Original file', it.file), row('Original size', it.bytes ? fmtBytes(it.bytes) : null),
+        row('Palette', palette(it)),
         row('Category', it.category), row('Albums', albums),
         row('Tags', it.tags?.length ? it.tags.map((t) => h('a', { class: 'tag', href: `#/gallery?tag=${encodeURIComponent(t)}`, onclick: () => ctx.close(true) }, t)) : null))];
     if (!social.enabled()) return infoEl.replaceChildren(...details);

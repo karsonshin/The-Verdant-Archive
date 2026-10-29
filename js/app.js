@@ -2,8 +2,10 @@ import { $, $$, h, esc, md, plain, fmtDur, debounce, mediaUrl, wall } from './ut
 import { createLightbox } from './lightbox.js';
 import * as social from './social.js';
 import { createOrb } from './orb.js';
+import * as Vision from './vision.js';
 
 let CFG, DB, ALL = [], BY_ID = new Map(), ALBUMS = new Map();
+let VIS = null; // smart-search index built from data/vision.json (palette, tone, mood facts per photo); null = plain text search
 const app = $('#app');
 const cur = { base: null, list: [] };
 const lbCtx = { cfg: null, list: [], albumName: (id) => ALBUMS.get(id)?.name, navigate: (id) => nav(withV(cur.base, id), { replace: true, lb: !!history.state?.lb }), close(skip) { if (skip) return; history.state?.lb ? history.back() : nav(cur.base, { replace: true }); } };
@@ -39,14 +41,22 @@ const SORTS = {
 /** An album's own items plus those of its (one-level) sub-albums. */
 const albumIds = (id) => new Set([id, ...DB.albums.filter((a) => a.parent === id).map((a) => a.id)]);
 
-function filterItems(p) {
+/**
+ * The gallery's search and filters. The smart search reads the sentence (moods, colours, dates, places, plain words) and ranks by how well
+ * photos fit; `found` says what it understood. ?like=<id> lists photos that look like one photo; ?color=#rrggbb photos whose palette holds a colour.
+ */
+function runSearch(p) {
   const ids = p.album ? albumIds(p.album) : null;
-  const terms = (p.q || '').toLowerCase().split(/\s+/).filter(Boolean);
-  return ALL.filter((i) =>
+  let list = ALL.filter((i) =>
     (!p.cat || i.category === p.cat) && (!p.tag || i.tags?.includes(p.tag)) && (!ids || i.albums?.some((a) => ids.has(a))) &&
     (!p.year || i.year === +p.year) && (!p.month || i.month === +p.month) && (!p.place || i.placeKey === p.place || i.place?.country === p.place) &&
-    (!p.camera || i.cam === p.camera) && terms.every((t) => i.hay.includes(t))
-  ).sort(SORTS[p.sort] || SORTS.newest);
+    (!p.camera || i.cam === p.camera));
+  if (p.like && VIS?.get(p.like)) return { list: Vision.similar(p.like, list, VIS, 48), found: null, ranked: true };
+  const text = [p.q, p.mood, p.color].filter(Boolean).join(' ').trim();
+  const found = text ? Vision.search(text, list, VIS) : null;
+  if (found) list = found.items;
+  const ranked = !!found?.visual && !p.sort;
+  return { list: ranked ? list : list.slice().sort(SORTS[p.sort] || SORTS.newest), found, ranked };
 }
 
 // ---------------------------------------------------------------- grid
@@ -159,12 +169,6 @@ function headline() {
   const COPY = ['fontFamily', 'fontSize', 'fontWeight', 'fontStretch', 'fontStyle', 'letterSpacing', 'lineHeight', 'whiteSpace', 'display', 'verticalAlign', 'marginLeft'];
   let layer = null, copy = null, card = null, plate = null, board = null, opened = false, armed = true, hoverT = 0, gone = 0, settleT = 0, held = [], fillT = 0, px = -1, py = -1, z = 1000, hoverRaf = 0, extW = 0, vines = {}; // extW: width of ".jpg", which melts away as the name rises
 
-  const facts = () => {
-    const vids = ALL.filter((i) => i.type === 'video').length, ym = ALL.map((i) => i.year * 12 + i.month - 1);
-    const places = new Set(ALL.map((i) => i.placeKey).filter(Boolean)).size, when = (v) => `${monthName((v % 12) + 1, 'short')} ${Math.floor(v / 12)}`;
-    const [lo, hi] = [Math.min(...ym), Math.max(...ym)];
-    return [[countLabel(ALL.length - vids, 'photo'), vids ? countLabel(vids, 'video') : null].filter(Boolean).join(' and '), ym.length ? (lo === hi ? when(lo) : `${when(lo)} to ${when(hi)}`) : null, places ? countLabel(places, 'place') : null].filter(Boolean).join(', ');
-  };
 
   // Prints are laid out on a loose grid of cells with jitter. Sizes vary (larger ones drift more, as if closer), prints may tuck partly behind
   // the plate, New random layout every time.
@@ -262,12 +266,14 @@ function headline() {
 
   const place = () => { // the name starts exactly where the real one is, then rises to the middle at a size that still fits
     const r = btn.getBoundingClientRect(), fs = parseFloat(getComputedStyle(el).fontSize);
-    const gap = fs * 0.26, bare = r.width - extW + gap, s = Math.max(1, Math.min(96 / fs, (innerWidth * 0.8) / bare)), ty = innerHeight * 0.4, nameW = bare * s, nameH = r.height * s;
+    const gap = fs * 0.26, bare = r.width - extW + gap, s = Math.max(1, Math.min(96 / fs, (innerWidth * 0.8) / bare)), nameW = bare * s, nameH = r.height * s;
+    card.style.maxHeight = Math.max(140, innerHeight - 32 - nameH - 22 - 64) + 'px'; // a long message scrolls inside the card instead of running off a small screen
+    const ph = nameH + 22 + card.offsetHeight + 64, top = Math.max(16, (innerHeight - ph) / 2), ty = top + 30 + nameH / 2; // the whole popup sits in the middle of the screen
     layer.style.setProperty('--cx', r.left + r.width / 2 + 'px'); layer.style.setProperty('--cy', r.top + r.height / 2 + 'px');
     Object.assign(copy.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
     copy.style.setProperty('--dy', ty - (r.top + r.height / 2) + 'px'); copy.style.setProperty('--s', s); copy.style.setProperty('--ex', (extW * s) / 2 + 'px');
     card.style.top = ty + nameH / 2 + 22 + 'px';
-    const pw = Math.min(innerWidth - 24, Math.max(nameW, Math.min(card.offsetWidth, innerWidth * 0.9)) + 72), top = ty - nameH / 2 - 30, ph = nameH + 22 + card.offsetHeight + 64;
+    const pw = Math.min(innerWidth - 24, Math.max(nameW, Math.min(card.offsetWidth, innerWidth * 0.9)) + 72);
     Object.assign(plate.style, { left: (innerWidth - pw) / 2 + 'px', top: top + 'px', width: pw + 'px', height: ph + 'px' });
     const box = { left: (innerWidth - pw) / 2, right: (innerWidth + pw) / 2, top, bottom: top + ph };
     scatter(box); grow(box);
@@ -288,8 +294,8 @@ function headline() {
     if (ext) { extW = btn.children[1].getBoundingClientRect().width; ext.classList.add('flip-ext'); }
     copy.style.textAlign = 'center';
     const link = (href, text, cls) => h('a', { href, class: cls }, text);
-    card = h('div', { class: 'flip-card' }, divider(), h('p', { class: 'flip-facts' }, facts()),
-      h('div', { class: 'flip-links' }, link('#/gallery', ['Browse Gallery', h('span', { 'aria-hidden': 'true' }, ' →')], 'flip-cta'), ['Albums', 'Timeline', 'Places', 'Gear', 'About'].map((n) => link('#/' + n.toLowerCase(), n))));
+    card = h('div', { class: 'flip-card' }, divider(), h('div', { class: 'flip-bio', html: md(CFG.bio || '') }),
+      h('div', { class: 'flip-links' }, link('#/about', ['More about me', h('span', { 'aria-hidden': 'true' }, ' →')], 'flip-cta'), link('#/gallery', 'Browse the gallery')));
     plate = h('div', { class: 'flip-plate' }, ['tl', 'tr', 'bl', 'br'].map(flourish));
     board = h('div', { class: 'board', 'aria-hidden': 'true' });
     for (const k of ['front', 'top']) vines[k] = sv('svg', { class: 'vine', 'aria-hidden': 'true', viewBox: `0 0 ${innerWidth} ${innerHeight}`, preserveAspectRatio: 'none' });
@@ -326,8 +332,8 @@ function headline() {
     addEventListener('pointermove', track, { passive: true }); addEventListener('keydown', onKey); addEventListener('resize', relayout);
     layer.getBoundingClientRect(); // commit the closed state so everything grows from the name
     layer.classList.add('on');
-    fillT = setTimeout(() => layer?.classList.add('filled'), reduce ? 0 : 850); // prints and vine start only once the circle has finished opening: animating both at once is what makes it heavy
-    settleT = setTimeout(() => layer?.classList.add('settled'), reduce ? 0 : 2400); // after the fly-in, hover and drag respond without the entrance delays
+    fillT = setTimeout(() => layer?.classList.add('filled'), reduce ? 0 : 120); // prints and vine start a moment after the popup, so they do not all animate in the same frame
+    settleT = setTimeout(() => layer?.classList.add('settled'), reduce ? 0 : 2200); // after the fly-in, hover and drag respond without the entrance delays
     layer.tabIndex = -1; (viaKeyboard ? layer.querySelector('a') : layer).focus({ preventScroll: true }); // a modal owns focus, so Esc and Tab work however it was opened
   }
   function shut(restoreFocus = true) {
@@ -442,17 +448,18 @@ function pageGallery(q) {
       ...DB.categories.map((c) => h('button', { class: 'chip', type: 'button', 'aria-pressed': p.cat === c, onclick: () => set('cat', p.cat === c ? '' : c) }, c, h('span', { class: 'n' }, catCount(c)))));
   }
   function refresh() {
-    const list = filterItems(p);
+    const { list, found } = runSearch(p);
     setList(list, cur.base);
-    drawChips();
+    drawChips(); drawAssist(found, list);
     const keys = Object.keys(p).filter((k) => labels[k] && p[k]);
     nActive.textContent = keys.filter((k) => k !== 'cat').length || '';
-    active.replaceChildren(...keys.map((k) => h('button', { class: 'chip', type: 'button', 'aria-label': 'Remove filter ' + labels[k] + ': ' + p[k],
-      onclick: () => { const s = $('#f-' + k); if (s) s.value = ''; if (k === 'q') $('#q').value = ''; set(k, ''); } }, k === 'month' ? monthName(+p[k]) : p[k])));
-    count.textContent = countLabel(list.length, 'result') + (p.q ? ` for “${p.q}”` : '');
+    active.replaceChildren(...keys.filter((k) => !((k === 'q' || k === 'mood') && found?.chips.length)).map((k) => h('button', { class: 'chip', type: 'button', 'aria-label': 'Remove filter ' + labels[k] + ': ' + p[k],
+      onclick: () => { const s = $('#f-' + k); if (s) s.value = ''; if (k === 'q') $('#q').value = ''; set(k, ''); } }, k === 'month' ? monthName(+p[k]) : k === 'like' ? 'this photo' : p[k])));
+    count.textContent = countLabel(list.length, p.like ? 'similar photo' : 'result') + (p.q || p.mood ? ` for “${[p.q, p.mood].filter(Boolean).join(' ')}”` : '');
     results.replaceChildren(list.length ? grid(list, cur.base) : empty('No matches. Try clearing a filter.'));
     layoutGrids();
   }
+  const moods = VIS ? Vision.moodSuggestions(ALL, VIS) : [];
   const bar = h('div', { class: 'filters' },
     select('Album', 'f-album', p.album, DB.albums.map((a) => [a.id, (a.parent ? '— ' : '') + a.name]), (v) => set('album', v)),
     select('Tag', 'f-tag', p.tag, tags.map(([t, n]) => [t, `${t} (${n})`]), (v) => set('tag', v)),
@@ -460,15 +467,35 @@ function pageGallery(q) {
     select('Month', 'f-month', p.month, Array.from({ length: 12 }, (_, i) => [i + 1, monthName(i + 1)]), (v) => set('month', v)),
     select('Location', 'f-place', p.place, places.map((x) => [x, x]), (v) => set('place', v)),
     select('Camera', 'f-camera', p.camera, cams.map((x) => [x, x]), (v) => set('camera', v)),
+    ...(moods.length ? [select('Mood', 'f-mood', p.mood, moods.map((m) => [m.label.toLowerCase(), m.label]), (v) => set('mood', v))] : []),
     h('select', { id: 'f-sort', 'aria-label': 'Sort', onchange: (e) => set('sort', e.target.value === 'newest' ? '' : e.target.value) },
       [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['name', 'File name']].map(([v, t]) => h('option', { value: v, selected: (p.sort || 'newest') === v }, t))),
     h('a', { class: 'clear', href: '#/gallery' }, 'Clear all'));
-  const labels = { cat: 'Category', tag: 'Tag', album: 'Album', year: 'Year', month: 'Month', place: 'Location', camera: 'Camera', q: 'Search' };
+  const labels = { cat: 'Category', tag: 'Tag', album: 'Album', year: 'Year', month: 'Month', place: 'Location', camera: 'Camera', q: 'Search', mood: 'Mood', like: 'Looks like', color: 'Colour' };
   const active = h('div', { class: 'active', 'aria-label': 'Active filters' });
   const nActive = h('span', { class: 'n' });
   const panel = h('details', { class: 'filter-panel' }, h('summary', {}, 'Filters', nActive), bar);
   panel.open = innerWidth > 760 || Object.keys(p).some((k) => k !== 'sort' && k !== 'cat' && p[k]);
-  const page = h('div', { class: 'page' }, pageHead('Gallery'), chips, panel, active, count, results);
+  // The assistant: says how it read the search, lets you drop any part of it, and is honest about words it could not match.
+  const assist = h('div', { class: 'assist', 'aria-live': 'polite' });
+  function drawAssist(found, list) {
+    const kids = [];
+    if (p.like && VIS?.get(p.like)) {
+      const it = BY_ID.get(p.like);
+      kids.push(h('p', { class: 'assist-line' }, it ? h('img', { class: 'assist-thumb', src: mediaUrl(it, 'thumb.webp'), alt: '' }) : null, 'Photos that look like this one: similar palette, light and mood. ', h('button', { type: 'button', class: 'linkish', onclick: () => set('like', '') }, 'Clear')));
+    } else if (found?.chips.length) {
+      kids.push(h('p', { class: 'assist-line' }, 'I read that as: ', ...found.chips.map((c) => h('button', { type: 'button', class: 'chip understood', 'data-kind': c.kind, title: 'Remove this from the search', 'aria-label': `Remove ${c.kind} ${c.label}`,
+        onclick: () => { if (c.kind === 'mood' && p.mood && c.tokens[0] === p.mood) { const m = $('#f-mood'); if (m) m.value = ''; set('mood', ''); } else if (c.tokens[0].startsWith('#') && p.color) set('color', ''); else set('q', Vision.dropToken(p.q || '', c.tokens[0])); const sb = $('#q'); if (sb) sb.value = p.q || ''; } },
+        c.swatch ? h('i', { class: 'sw', style: `background:${c.swatch}` }) : null, c.label, h('span', { 'aria-hidden': 'true' }, ' ×')))));
+    }
+    if (found && (!list.length || found.unmatched.length)) {
+      const place = places[0]?.split(',')[0], year = years[0], looks = (VIS ? Vision.moodSuggestions(ALL, VIS).slice(0, 2).map((m) => m.label.toLowerCase()) : []);
+      kids.push(h('p', { class: 'assist-note' }, `Try a look, colour, place or date, like ${[looks[0] && `“${looks[0]}”`, looks[1] && `“${looks[1]} green”`, place && `“${place}”`, year && `“${year}”`].filter(Boolean).join(', ')}.`));
+    }
+    assist.replaceChildren(...kids);
+  }
+
+  const page = h('div', { class: 'page' }, pageHead('Gallery'), chips, panel, active, assist, count, results);
   cur.base = link('gallery', p);
   queueMicrotask(refresh);
   return page;
@@ -481,7 +508,24 @@ function pageAlbums() {
     tops.length ? tops.map((a) => {
       const kids = DB.albums.filter((k) => k.parent === a.id);
       return h('section', { class: 'album-group' }, h('div', { class: 'cards' }, albumCard(a), kids.map(albumCard)));
-    }) : empty('No albums yet.'));
+    }) : empty('No albums yet.'),
+    feelCollections());
+}
+
+/** Groups made by how the photos look (see js/vision.js collections): shown under the albums, each a one-click search. */
+function feelCollections() {
+  const cols = Vision.collections(ALL, VIS, { strength: 0.65, max: 8 });
+  if (!cols.length) return null;
+  const used = new Set();
+  return h('section', { class: 'band feel', 'aria-labelledby': 'feel-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'feel-h' }, 'Collections by feel')),
+    h('p', { class: 'muted feel-note' }, 'Grouped automatically by how the photos look: colour, light and mood. Click one to search it.'),
+    h('div', { class: 'cards' }, cols.map((c) => {
+      const cover = c.items.find((i) => !used.has(i.id)) || c.items[0], pal = VIS.get(cover.id)?.pal || []; // a different cover for each collection
+      used.add(cover.id);
+      return h('a', { class: 'card', href: link('gallery', { mood: c.label.toLowerCase() }) },
+        h('div', { class: 'card-img' }, h('img', { src: mediaUrl(cover, 'medium.webp'), srcset: `${mediaUrl(cover, 'thumb.webp')} ${natW(cover, 'thumb')}w, ${mediaUrl(cover, 'medium.webp')} ${natW(cover, 'medium')}w`, sizes: '(min-width: 900px) 380px, 90vw', alt: '', loading: 'lazy', decoding: 'async' })),
+        h('div', { class: 'card-body' }, h('h3', {}, c.label), h('p', { class: 'muted' }, countLabel(c.items.length, 'photo')), h('div', { class: 'pal-bar small', 'aria-hidden': 'true' }, pal.map((p) => h('i', { style: `background:${p.hex};flex:${p.pct}` })))));
+    })));
 }
 
 function pageAlbum(id) {
@@ -507,18 +551,19 @@ function pageAlbum(id) {
  */
 function pageTimeline(q) {
   const order = q.get('order') === 'oldest' ? 'oldest' : 'newest';
-  const list = ALL.slice().sort(order === 'oldest' ? SORTS.oldest : SORTS.newest);
+  // The line starts at the heart of the trunk and winds outward. By default the oldest photo is at the heart and the newest on the bark.
+  const list = ALL.slice().sort(order === 'oldest' ? SORTS.newest : SORTS.oldest);
   const base = order === 'oldest' ? '#/timeline?order=oldest' : '#/timeline';
   setList(list, base);
-  const LEVELS = [34, 54, 82, 126, 190]; // ring thickness = tile size in px: from "years at a glance" to "big pictures"
-  const store = { get: () => { try { return +localStorage.getItem('va-flow'); } catch { return NaN; } }, set: (v) => { try { localStorage.setItem('va-flow', v); } catch { /* fine */ } } };
-  let level = Number.isFinite(store.get()) && localStorage.getItem('va-flow') !== null ? Math.min(4, Math.max(0, store.get())) : 2;
-  // The line starts at the heart of the trunk and winds outward, one ring per turn, like growth rings. wrap scrolls sideways when the trunk is wider than the page.
+  const LEVELS = [34, 44, 54, 66, 82, 102, 126, 156, 190]; // ring thickness = tile size in px: from "years at a glance" to "big pictures"
+  const store = { get: () => { try { return +localStorage.getItem('va-flow2'); } catch { return NaN; } }, set: (v) => { try { localStorage.setItem('va-flow2', v); } catch { /* fine */ } } };
+  let level = Number.isFinite(store.get()) && localStorage.getItem('va-flow2') !== null ? Math.min(LEVELS.length - 1, Math.max(0, store.get())) : 4;
+  // wrap scrolls sideways when the trunk is wider than the page
   const stage = h('div', { class: 'flow', role: 'list', 'aria-label': 'Timeline of photos and videos, winding outward from the centre like tree rings' });
   const wrap = h('div', { class: 'flow-wrap' }, stage);
   const NS = 'http://www.w3.org/2000/svg';
   const svgEl = (tag, attrs = {}) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
-  const bark = svgEl('svg', { class: 'flow-bark', 'aria-hidden': 'true' }), line = svgEl('svg', { class: 'flow-line', 'aria-hidden': 'true' });
+  const bark = svgEl('svg', { class: 'flow-bark', 'aria-hidden': 'true' });
 
   let prev = null;
   const labels = [];
@@ -534,76 +579,99 @@ function pageTimeline(q) {
     return a;
   });
   const labelOf = new Map(labels);
-  stage.append(bark, ...tiles, line, ...labels.map(([, l]) => l)); // bark and wood under the tiles, the thin spiral line and the labels over them
+  stage.append(bark, ...tiles, ...labels.map(([, l]) => l)); // bark, roots and wood under the tiles; labels over them
 
   const centres = []; // tile centres in stage pixels, for the date pill
-  let ringH = 100;
+  let ringH = 100, cxS = 0, cyS = 0, curS = 0; // the trunk's centre and ring thickness, so zooming can keep the middle where it is
   function layout() {
     const W = wrap.clientWidth;
     if (!W) return;
-    const base = LEVELS[level] * (W < 520 ? 0.75 : 1), n = tiles.length, TAU = Math.PI * 2, th0 = -Math.PI / 2; // start at the top, wind clockwise
+    const base0 = LEVELS[level] * (W < 520 ? 0.75 : 1), n = tiles.length, TAU = Math.PI * 2, th0 = -Math.PI / 2; // start at the top, wind clockwise
     const plan = (s) => {
-      const r0 = s * 0.75, BARK = Math.max(24, s * 0.5), rAt = (t) => r0 + (s * (t - th0)) / TAU; // Archimedean spiral: the radius grows by one tile per turn
-      let th = th0; const place = [];
-      for (let i = 0; i < n; i++) {
-        let dth = s / rAt(th); dth = s / rAt(th + dth / 2); // an arc of about one tile at the tile's middle radius
-        const mid = th + dth / 2, rm = rAt(mid);
-        place.push({ rm, mid, dth, wOut: dth * (rm + s / 2), wIn: dth * (rm - s / 2) });
-        th += dth;
+      const r0 = s * 0.75, BARK = Math.max(24, s * 0.5), rs = (t) => r0 + (s * (t - th0)) / TAU; // Archimedean spiral: the line moves out by one tile per turn
+      let th = th0; const span = [];
+      for (let i = 0; i < n; i++) { // each photo takes the stretch of the band, between this turn and the next, that is about one tile long
+        let dth = s / (rs(th) + s / 2); dth = s / (rs(th + dth / 2) + s / 2);
+        span.push([th, th + dth]); th += dth;
       }
-      const rEnd = rAt(th) + s / 2;
-      return { s, BARK, rAt, place, th, rEnd, size: Math.ceil((rEnd + BARK * 1.5 + 8) * 2) };
+      const rEnd = rs(th) + s;
+      return { s, BARK, rs, span, th, rEnd, trunk: Math.ceil((rEnd + BARK * 1.45 + 8) * 2) }; // trunk: its diameter, bark included
     };
-    let P = plan(base);
-    if (level <= 2 && P.size > W) { const f = (W - 6) / P.size; if (f >= 0.7) P = plan(base * f); } // zoomed-out levels fit the page; zoomed-in ones scroll sideways
-    const { s, BARK, rAt, place, th, rEnd, size } = P, cx = size / 2, cy = size / 2;
+    let P = plan(base0);
+    if (level <= 4 && P.trunk > W * 0.62) { const f = (W * 0.62) / P.trunk; if (f >= 0.45) P = plan(base0 * f); } // zoomed-out levels leave room either side for the roots; zoomed-in ones scroll sideways
+    const { s, BARK, rs, span, rEnd, trunk } = P;
+    const SW = Math.ceil(Math.max(W, trunk + BARK * 8)), SH = Math.ceil(trunk + BARK * 10.5), cx = SW / 2, cy = SH / 2; // the stage is as wide as the page, so roots can run all the way to its edges
+    cxS = cx; cyS = cy; curS = s;
     ringH = s; centres.length = 0;
     tiles.forEach((a, i) => {
-      const t = place[i], x = cx + t.rm * Math.cos(t.mid), y = cy + t.rm * Math.sin(t.mid), w = t.wOut, shrink = (t.wOut - t.wIn) / 2, ang = (t.mid * 180) / Math.PI + 90, d = Math.hypot(w, s);
+      // The photo is exactly the piece of the band between two radial lines and the spiral above and below: neighbours share every edge, so nothing shows between them.
+      const [ta, tb] = span[i], K = Math.max(2, Math.ceil((tb - ta) / 0.1)), pts = [];
+      for (let k = 0; k <= K; k++) { const t = ta + ((tb - ta) * k) / K, r = rs(t) + s; pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } // outer edge
+      for (let k = K; k >= 0; k--) { const t = ta + ((tb - ta) * k) / K, r = rs(t); pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } // inner edge, back again
+      const mx = pts.reduce((m, p) => m + p[0], 0) / pts.length, my = pts.reduce((m, p) => m + p[1], 0) / pts.length;
+      const grown = pts.map(([x, y]) => { const d = Math.hypot(x - mx, y - my) || 1; return [x + ((x - mx) / d) * 0.6, y + ((y - my) / d) * 0.6]; }); // 0.6px of overlap hides hairlines
+      const x0 = Math.min(...grown.map((p) => p[0])), y0 = Math.min(...grown.map((p) => p[1])), x1 = Math.max(...grown.map((p) => p[0])), y1 = Math.max(...grown.map((p) => p[1]));
       const st = a.style;
-      st.width = w.toFixed(1) + 'px'; st.height = s + 'px'; st.left = (x - w / 2).toFixed(1) + 'px'; st.top = (y - s / 2).toFixed(1) + 'px';
-      st.transform = `rotate(${ang.toFixed(2)}deg)`; // the tile's top edge faces outward
-      st.clipPath = `polygon(0 0, 100% 0, calc(100% - ${shrink.toFixed(1)}px) 100%, ${shrink.toFixed(1)}px 100%)`; // a wedge: narrower on the inside, so rings meet without gaps
-      st.setProperty('--d', d.toFixed(1) + 'px'); st.setProperty('--ir', (-ang).toFixed(2) + 'deg'); // the photo turns back the other way, so it stays upright
+      st.left = x0.toFixed(1) + 'px'; st.top = y0.toFixed(1) + 'px'; st.width = (x1 - x0).toFixed(1) + 'px'; st.height = (y1 - y0).toFixed(1) + 'px';
+      st.clipPath = `polygon(${grown.map(([x, y]) => `${(x - x0).toFixed(1)}px ${(y - y0).toFixed(1)}px`).join(',')})`;
+      const tm = (ta + tb) / 2, rm = rs(tm) + s / 2, x = cx + rm * Math.cos(tm), y = cy + rm * Math.sin(tm);
       centres.push([x, y]);
       const lab = labelOf.get(a);
       if (lab) { lab.style.left = x.toFixed(1) + 'px'; lab.style.top = y.toFixed(1) + 'px'; }
     });
-    stage.style.width = size + 'px'; stage.style.height = size + 'px';
+    stage.style.width = SW + 'px'; stage.style.height = SH + 'px';
     stage.classList.toggle('dense', s < 60);
-    drawBark(cx, cy, rEnd, BARK, size);
-    drawLine(cx, cy, rAt, th, s, size);
-    if (size > W) wrap.scrollLeft = (size - W) / 2; // wide trunks open centred
+    drawBark(cx, cy, rEnd, BARK, SW, SH);
+    if (SW > W) wrap.scrollLeft = (SW - W) / 2; // wide trunks open centred
     pillUpdate();
   }
 
-  // The trunk outline: a wobbly closed ring of bark around the last ring, with a few darker layers and short bark marks.
-  function drawBark(cx, cy, rEnd, B, size) {
-    bark.replaceChildren(); bark.setAttribute('viewBox', `0 0 ${size} ${size}`); bark.setAttribute('width', size); bark.setAttribute('height', size);
+  // The trunk seen from above: pale wood under the rings, a dark wobbly band of bark around them, and a few thick roots flaring out of it.
+  function drawBark(cx, cy, rEnd, B, SW, SH) {
+    bark.replaceChildren(); bark.setAttribute('viewBox', `0 0 ${SW} ${SH}`); bark.setAttribute('width', SW); bark.setAttribute('height', SH);
     let seed = (tiles.length * 2654435761) >>> 0; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296); // fixed seed: the same trunk every visit
     const ph = [rnd() * 6.28, rnd() * 6.28, rnd() * 6.28, rnd() * 6.28];
     const wob = (a, amp) => amp * (0.55 * Math.sin(3 * a + ph[0]) + 0.3 * Math.sin(5 * a + ph[1]) + 0.2 * Math.sin(8 * a + ph[2]) + 0.12 * Math.sin(13 * a + ph[3]));
     const ring = (r, amp, steps = 120) => { let d = ''; for (let k = 0; k <= steps; k++) { const a = (k / steps) * Math.PI * 2, rr = r + wob(a, amp); d += `${k ? 'L' : 'M'}${(cx + rr * Math.cos(a)).toFixed(1)},${(cy + rr * Math.sin(a)).toFixed(1)}`; } return d + 'Z'; };
-    const inner = rEnd + 3, outer = rEnd + B * 1.45;
-    bark.append(svgEl('circle', { cx, cy, r: inner, class: 'wood' })); // pale wood under the rings, so the unfinished last turn is not bare page
-    // the filled bark band between the tiles and the outer edge (even-odd keeps the middle open)
+    const inner = rEnd + 3, outer = rEnd + B * 1.45, pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    bark.append(svgEl('circle', { cx, cy, r: inner, class: 'wood' }));
     bark.append(svgEl('path', { d: ring(outer, B * 0.22) + ring(inner, B * 0.06), 'fill-rule': 'evenodd', class: 'bark-fill' }));
-    for (const [r, amp, w, cls] of [[outer, B * 0.22, 3, 'bark-edge'], [outer - B * 0.36, B * 0.18, 1.6, 'bark-mid'], [outer - B * 0.7, B * 0.12, 1.2, 'bark-mid'], [inner, B * 0.06, 2, 'bark-edge']]) bark.append(svgEl('path', { d: ring(r, amp), class: cls, 'stroke-width': w }));
+    for (const [r, amp, w, cls] of [[outer - B * 0.36, B * 0.18, 1.6, 'bark-mid'], [outer - B * 0.7, B * 0.12, 1.2, 'bark-mid'], [inner, B * 0.06, 2, 'bark-edge'], [outer, B * 0.22, 3, 'bark-edge']]) bark.append(svgEl('path', { d: ring(r, amp), class: cls, 'stroke-width': w }));
     let marks = ''; // short, slightly slanted bark furrows
     for (let k = 0; k < 150; k++) {
       const a = rnd() * Math.PI * 2, r1 = inner + B * (0.18 + rnd() * 0.3), len = B * (0.25 + rnd() * 0.5), sl = (rnd() - 0.5) * 0.09, w = wob(a, B * 0.12);
       marks += `M${(cx + (r1 + w) * Math.cos(a)).toFixed(1)},${(cy + (r1 + w) * Math.sin(a)).toFixed(1)}L${(cx + (r1 + w + len) * Math.cos(a + sl)).toFixed(1)},${(cy + (r1 + w + len) * Math.sin(a + sl)).toFixed(1)}`;
     }
     bark.append(svgEl('path', { d: marks, class: 'bark-mid', 'stroke-width': 1.3, 'stroke-linecap': 'round' }));
-    bark.append(svgEl('circle', { cx, cy, r: Math.max(5, ringH * 0.22), class: 'pith' })); // the pith, where it all started
-  }
 
-  // One thin continuous line along the outer edge of every tile: the whole timeline is a single spiral.
-  function drawLine(cx, cy, rAt, thEnd, s, size) {
-    line.replaceChildren(); line.setAttribute('viewBox', `0 0 ${size} ${size}`); line.setAttribute('width', size); line.setAttribute('height', size);
-    const th0 = -Math.PI / 2; let d = '';
-    for (let t = th0, k = 0; t <= thEnd + 0.02; t += 0.07, k++) { const r = rAt(t) + s / 2; d += `${k ? 'L' : 'M'}${(cx + r * Math.cos(t)).toFixed(1)},${(cy + r * Math.sin(t)).toFixed(1)}`; }
-    line.append(svgEl('path', { d, class: 'spiral' }));
+    // roots: thick, winding flares that leave the bark, twist as they grow, fork, and taper to rounded tips. Each one steers by a changing heading,
+    // so it can wander without swinging round the trunk. Drawn over the bark's outer edge so they grow out of it.
+    const root = (ox, oy, dir, L, wBase, bend, wind, depth = 0) => {
+      const N = Math.max(44, Math.min(130, Math.round(L / 9))), C = [], heading = [], ph = rnd() * 6.28, waves = (1.3 + rnd() * 1.3) * Math.max(1, L / (B * 7)); // longer roots wander more
+      const wAt = (k) => { const t = k / N; return wBase * (0.1 + 0.9 * Math.pow(1 - t, 1.5)) * Math.sqrt(Math.max(0, 1 - t ** 6)) * (1 + 0.1 * Math.sin(t * 13 + ph)) + 1.2; }; // thick at the trunk, then a long tapering tail; a little knobbly, rounded tip
+      let x = ox, y = oy;
+      for (let k = 0; k <= N; k++) {
+        const t = k / N, a = dir + bend * t + wind * Math.sin(t * Math.PI * 2 * waves + ph) * Math.min(1, t * 5);
+        C.push([x, y]); heading.push(a); x += (L / N) * Math.cos(a); y += (L / N) * Math.sin(a);
+      }
+      const edge = (side) => C.map(([px, py], k) => { const [x2, y2] = C[Math.min(N, k + 1)], [x1, y1] = C[Math.max(0, k - 1)], d = Math.hypot(x2 - x1, y2 - y1) || 1, w = wAt(k); return [px + (-(y2 - y1) / d) * w * side, py + ((x2 - x1) / d) * w * side]; });
+      const Lp = edge(1), Rp = edge(-1), P = (a) => a.map(([px, py], k) => `${k ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
+      bark.append(svgEl('path', { d: P(Lp) + P(Rp.slice().reverse()).replace('M', 'L') + 'Z', class: 'bark-fill root-fill' }));
+      bark.append(svgEl('path', { d: P(Lp.slice(3)), class: 'bark-edge', 'stroke-width': 2.6, 'stroke-linecap': 'round', fill: 'none' }), svgEl('path', { d: P(Rp.slice(3)), class: 'bark-edge', 'stroke-width': 2.6, 'stroke-linecap': 'round', fill: 'none' }));
+      for (const off of [-0.5, -0.18, 0.18, 0.5]) bark.append(svgEl('path', { d: C.slice(2, N - 3).map(([px, py], k) => { const i = k + 2, [x2, y2] = C[i + 1], [x1, y1] = C[i - 1], d = Math.hypot(x2 - x1, y2 - y1) || 1, w = wAt(i) * off; return `${k ? 'L' : 'M'}${(px + (-(y2 - y1) / d) * w).toFixed(1)},${(py + ((x2 - x1) / d) * w).toFixed(1)}`; }).join(''), class: 'bark-mid', 'stroke-width': 1.3, fill: 'none', 'stroke-linecap': 'round' }));
+      if (depth < 2) { // smaller roots forking off, each starting exactly on its parent and twisting in its own way
+        const fork = (frac, side, lenK, widK) => { const i = Math.round(N * frac); root(C[i][0], C[i][1], heading[i] + side * (0.5 + rnd() * 0.3), L * lenK, wBase * widK, side * (0.3 + rnd() * 0.4), 0.5 + rnd() * 0.4, depth + 1); };
+        fork(0.3, 1, 0.6, 0.5);
+        if (depth === 0 && L > B * 5) fork(0.6, -1, 0.5, 0.36);
+      }
+    };
+    // eight roots spread round the trunk. Each runs until it reaches the edge of the stage (the edge of the page, sideways), winding as it goes.
+    const reach = (ox, oy, a) => { const dx = Math.cos(a), dy = Math.sin(a), tx = dx > 0.001 ? (SW - ox) / dx : dx < -0.001 ? -ox / dx : Infinity, ty = dy > 0.001 ? (SH - oy) / dy : dy < -0.001 ? -oy / dy : Infinity; return Math.max(B * 3, Math.min(tx, ty)); };
+    [[0.1, 1.0], [0.9, 0.85], [1.65, 1.1], [2.4, 0.9], [3.04, 1.0], [3.85, 0.85], [4.6, 1.05], [5.5, 0.9]].forEach(([a, wK], i) => {
+      const aj = a + (rnd() - 0.5) * 0.18, [ox, oy] = pt(outer - B * 0.8 + wob(aj, B * 0.22), aj), side = i % 2 ? -1 : 1;
+      root(ox, oy, aj, reach(ox, oy, aj) * (1.12 + rnd() * 0.08), B * wK * 1.55, side * (0.15 + rnd() * 0.3), 0.6 + rnd() * 0.35); // the extra length makes up for the wandering, so the tip really gets there
+    });
+    bark.append(svgEl('circle', { cx, cy, r: Math.max(5, ringH * 0.22), class: 'pith' })); // the pith, where it all started
   }
 
   const pill = h('span', { class: 'flow-pill', 'aria-hidden': 'true' });
@@ -618,26 +686,44 @@ function pageTimeline(q) {
   }
   addEventListener('scroll', () => requestAnimationFrame(pillUpdate), { passive: true });
   wrap.addEventListener('scroll', () => requestAnimationFrame(pillUpdate), { passive: true });
-  const zoom = (d) => { const v = Math.min(4, Math.max(0, level + d)); if (v === level) return; level = v; store.set(v); stage.classList.remove('ready'); layout(); requestAnimationFrame(() => stage.classList.add('ready')); minus.disabled = level === 0; plus.disabled = level === 4; };
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const zoom = (d) => { // zoom about the middle of the trunk: it stays where it is on screen while the rings grow or shrink around it
+    const v = Math.min(LEVELS.length - 1, Math.max(0, level + d));
+    if (v === level) return false;
+    const before = stage.getBoundingClientRect().top + cyS, s0 = curS;
+    level = v; store.set(v); layout();
+    const dy = stage.getBoundingClientRect().top + cyS - before;
+    if (dy) scrollTo({ top: scrollY + dy, behavior: 'instant' });
+    if (!calm && s0 && curS) { stage.style.transformOrigin = `${cxS}px ${cyS}px`; stage.animate([{ transform: `scale(${s0 / curS})` }, { transform: 'scale(1)' }], { duration: 220, easing: 'cubic-bezier(.2, .7, .2, 1)' }); } // glide from the old size to the new
+    minus.disabled = level === 0; plus.disabled = level === LEVELS.length - 1;
+    return true;
+  };
   const minus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom out: more photos at once', title: 'Zoom out', onclick: () => zoom(-1) }, '−');
   const plus = h('button', { type: 'button', class: 'flow-btn', 'aria-label': 'Zoom in: bigger photos', title: 'Zoom in', onclick: () => zoom(1) }, '+');
-  minus.disabled = level === 0; plus.disabled = level === 4;
+  minus.disabled = level === 0; plus.disabled = level === LEVELS.length - 1;
 
-  let lastWheel = 0;
-  stage.addEventListener('wheel', (e) => { if (!e.ctrlKey) return; e.preventDefault(); if (Date.now() - lastWheel < 220) return; lastWheel = Date.now(); zoom(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  let acc = 0, lastWheel = 0;
+  stage.addEventListener('wheel', (e) => { // scroll or pinch while over the trunk zooms it; at either end of the range the page scrolls as usual
+    const dir = e.deltaY < 0 ? 1 : -1;
+    if (dir > 0 ? level >= LEVELS.length - 1 : level <= 0) { acc = 0; return; }
+    e.preventDefault();
+    acc += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : 1) * (e.ctrlKey ? 3 : 1); // a trackpad pinch arrives as many tiny ctrl-wheel events
+    if (acc < 60 || Date.now() - lastWheel < 90) return;
+    acc = 0; lastWheel = Date.now(); zoom(dir);
+  }, { passive: false });
   const ptr = new Map(); let pinch0 = 0;
   const dist = () => { const [p, r] = [...ptr.values()]; return Math.hypot(p.x - r.x, p.y - r.y); };
   stage.addEventListener('pointerdown', (e) => { ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2) pinch0 = dist(); });
-  stage.addEventListener('pointermove', (e) => { if (!ptr.has(e.pointerId)) return; ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2 && pinch0) { const ratio = dist() / pinch0; if (ratio > 1.3) { zoom(1); pinch0 = dist(); } else if (ratio < 0.77) { zoom(-1); pinch0 = dist(); } } });
+  stage.addEventListener('pointermove', (e) => { if (!ptr.has(e.pointerId)) return; ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptr.size === 2 && pinch0) { const ratio = dist() / pinch0; if (ratio > 1.18) { zoom(1); pinch0 = dist(); } else if (ratio < 0.85) { zoom(-1); pinch0 = dist(); } } });
   const up = (e) => { ptr.delete(e.pointerId); if (ptr.size < 2) pinch0 = 0; };
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
 
   const sw = (key, label) => h('a', { class: 'chip', href: key === 'newest' ? '#/timeline' : '#/timeline?order=oldest', 'aria-pressed': String(order === key) }, label);
   new ResizeObserver(() => { layout(); requestAnimationFrame(() => stage.classList.add('ready')); }).observe(wrap);
   queueMicrotask(layout);
-  return h('div', { class: 'page flow-page' }, pageHead('Timeline', 'Every photo, one continuous line winding out from the heart of the trunk, one ring at a time. Pinch, Ctrl+scroll or use + and − to zoom; click any photo to view it.'),
-    list.length ? h('div', { class: 'flow-bar' }, h('div', { class: 'chips', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest first'), sw('oldest', 'Oldest first')), pill, h('div', { class: 'flow-zoom', role: 'group', 'aria-label': 'Zoom' }, minus, plus)) : null,
-    list.length ? wrap : empty('The timeline starts with the first photo.'));
+  return h('div', { class: 'page flow-page' }, pageHead('The Trunk of Time', 'Every photo, one continuous line winding out from the heart of the trunk, one ring at a time: the oldest in the middle, the newest on the bark. Scroll or pinch over the trunk to zoom in and out around its middle, or use + and −; click any photo to view it.'),
+    list.length ? h('div', { class: 'flow-bar' }, h('div', { class: 'chips', role: 'group', 'aria-label': 'Order' }, sw('newest', 'Newest'), sw('oldest', 'Oldest')), pill, h('div', { class: 'flow-zoom', role: 'group', 'aria-label': 'Zoom' }, minus, plus)) : null,
+    list.length ? wrap : empty('The trunk grows with the first photo.'));
 }
 
 const fmtDay = (it) => wall(it.taken.local).toLocaleDateString(undefined, { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' });
@@ -728,14 +814,42 @@ function pageGear() {
 
 function pageAbout() {
   setList(ALL.slice().sort(SORTS.newest), '#/about');
-  const photos = ALL.filter((i) => i.type === 'photo').length;
+  const photos = ALL.filter((i) => i.type === 'photo'), videos = ALL.length - photos.length;
+  const places = new Set(ALL.map((i) => i.placeKey).filter(Boolean)).size;
+  const topCam = [...ALL.reduce((m, i) => (i.cam ? m.set(i.cam, (m.get(i.cam) || 0) + 1) : m), new Map())].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const oldest = ALL.reduce((a, i) => (!a || i.t < a.t ? i : a), null);
+  const since = oldest?.taken?.local ? wall(oldest.taken.local).toLocaleDateString(undefined, { timeZone: 'UTC', month: 'long', year: 'numeric' }) : null;
+
+  const facts = h('p', { class: 'about-facts' }, h('strong', {}, countLabel(photos.length, 'photo')), videos ? [' and ', h('strong', {}, countLabel(videos, 'video'))] : null, places ? [' from ', h('strong', {}, countLabel(places, 'place'))] : null,
+    since ? `, kept since ${since}` : null, topCam ? [', mostly on the ', h('strong', {}, topCam)] : null, '.');
+  const frames = photos.slice().sort(SORTS.newest).slice(0, 6);
+  // A vine that climbs the whole left edge of the portrait: a gently swaying stem, with leaves alternating along it.
+  const vine = (() => {
+    const H = 520, X = (y) => 36 + 11 * Math.sin(y / 54 + 1);
+    let d = '', leaves = '';
+    for (let y = H; y >= 0; y -= 8) d += `${y === H ? 'M' : 'L'}${X(y).toFixed(1)} ${y}`;
+    for (let y = H - 26, i = 0, side = 1; y > 14; y -= 36 + (i % 3) * 6, i++) {
+      side = -side;
+      leaves += `<path d="M0 0C6-9 20-9 28 0C20 9 6 9 0 0Z" transform="translate(${X(y).toFixed(1)} ${y}) rotate(${-90 + side * (46 + (i % 4) * 9)}) scale(${(1 + (i % 3) * 0.2).toFixed(2)})" fill="currentColor" opacity="${(0.78 + (i % 3) * 0.1).toFixed(2)}"/>`;
+    }
+    return `<svg class="vine-left" viewBox="0 0 72 ${H}" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>${leaves}</svg>`;
+  })();
+
   return h('div', { class: 'page about' },
     pageHead('About Me'),
-    h('div', { class: 'about-grid' + (CFG.portrait ? '' : ' solo') },
-      CFG.portrait ? h('img', { class: 'portrait big', src: CFG.portrait, alt: `Portrait of ${CFG.owner}`, draggable: 'false' }) : null,
+    h('div', { class: 'about-hero' + (CFG.portrait ? '' : ' solo') },
+      CFG.portrait ? h('figure', { class: 'about-portrait' }, h('div', { class: 'arch' }, h('img', { src: CFG.portrait, alt: `Portrait of ${CFG.owner}`, draggable: 'false' })), h('span', { html: vine })) : null,
       h('div', { class: 'about-copy' },
-        h('div', { class: 'prose', html: md(CFG.bio || '') }),
-        h('p', { class: 'muted about-count' }, `${countLabel(photos, 'photo')} and ${countLabel(ALL.length - photos, 'video')} so far.`))));
+        h('div', { class: 'prose about-prose', html: md(CFG.bio || '') }),
+        facts,
+        h('div', { class: 'about-links' }, h('a', { class: 'cta', href: '#/gallery' }, 'Browse the gallery'), h('a', { class: 'alt', href: '#/places' }, 'Where I’ve been'), h('a', { class: 'alt', href: '#/gear' }, 'The gear')),
+        CFG.contact?.trim() ? h('div', { class: 'about-contact' }, h('h2', {}, 'Say hello'), h('div', { class: 'prose', html: md(CFG.contact) })) : null)),
+    frames.length ? h('section', { class: 'band about-frames', 'aria-labelledby': 'frames-h' }, h('div', { class: 'band-head' }, h('h2', { id: 'frames-h' }, 'Lately'), h('a', { href: '#/gallery' }, 'All photos →')),
+      h('div', { class: 'frames' }, frames.map((it) => {
+        const a = h('a', { class: 'frame', href: withV('#/about', it.id), 'aria-label': it.title || fmtDay(it) || it.file }, h('img', { src: mediaUrl(it, 'thumb.webp'), alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' }));
+        a.addEventListener('click', (ev) => { if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button) return; ev.preventDefault(); nav(a.getAttribute('href'), { lb: true }); });
+        return a;
+      }))) : null);
 }
 
 const pageNotFound = () => { setList([], '#/'); return h('div', { class: 'page' }, pageHead('Lost in the trees'), h('p', {}, h('a', { href: '#/' }, 'Back to the clearing →'))); };
@@ -771,7 +885,7 @@ function route() {
     cur.base = base;
     layoutGrids();
     reveal(page);
-    if (!v) { scrollTo(0, 0); $('h1', app)?.focus({ preventScroll: true }); }
+    if (!v) { scrollTo(0, 0); if (document.activeElement !== $('#q')) $('h1', app)?.focus({ preventScroll: true }); } // moving focus to the heading would pull you out of the search box while you type
     $$('nav.main a').forEach((a) => (a.getAttribute('href').split('/')[1] === (seg[0] || '') ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     const sb = $('#q'); if (sb && document.activeElement !== sb) sb.value = seg[0] === 'gallery' ? q.get('q') || '' : '';
   }
@@ -783,11 +897,16 @@ function route() {
 
 // ---------------------------------------------------------------- chrome
 function theme() {
-  const root = document.documentElement, btn = $('#theme');
-  const eff = () => root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const paint = () => { btn.setAttribute('aria-label', `Switch to ${eff() === 'dark' ? 'light' : 'dark'} mode`); btn.dataset.mode = eff(); };
-  btn.addEventListener('click', () => { const n = eff() === 'dark' ? 'light' : 'dark'; root.dataset.theme = n; try { localStorage.setItem('va-theme', n); } catch {} paint(); });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paint);
+  const root = document.documentElement, btn = $('#theme'), dark = matchMedia('(prefers-color-scheme: dark)');
+  const eff = () => root.dataset.theme || (dark.matches ? 'dark' : 'light');
+  const paint = () => { const d = eff() === 'dark'; btn.setAttribute('aria-checked', String(d)); btn.title = `Switch to ${d ? 'light' : 'dark'} mode`; };
+  const fade = (change) => { // cross-fade instead of snapping
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return change();
+    if (document.startViewTransition) return document.startViewTransition(change);
+    root.classList.add('theme-fade'); change(); setTimeout(() => root.classList.remove('theme-fade'), 700);
+  };
+  btn.addEventListener('click', () => fade(() => { const n = eff() === 'dark' ? 'light' : 'dark'; root.dataset.theme = n; try { localStorage.setItem('va-theme', n); } catch {} paint(); }));
+  dark.addEventListener('change', paint);
   paint();
 }
 
@@ -819,6 +938,8 @@ async function boot() {
     return;
   }
   lbCtx.cfg = CFG;
+  VIS = await fetch('data/vision.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((j) => (j?.items ? Vision.buildIndex(j.items) : null)).catch(() => null); // a bonus file: without it search is plain text
+  lbCtx.vision = (id) => VIS?.get(id) || null;
   social.init(CFG.social);
   // give fan ratings a moment to arrive so the homepage slideshow can use them, but never hold the page up for long
   await Promise.race([social.loadSummary(), new Promise((r) => setTimeout(r, 1200))]);
