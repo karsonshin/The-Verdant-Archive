@@ -21,5 +21,5 @@ jobs:
             type=semver,pattern={{version}}
             type=sha
             type=raw,value=latest
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with: { context: ., push: true, tags: '${{ steps.meta.outputs.tags }}', cache-from: type=gha, cache-to: 'type=gha,mode=max' }
