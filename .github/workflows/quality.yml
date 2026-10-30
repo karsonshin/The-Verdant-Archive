@@ -13,7 +13,7 @@ jobs:
     name: Size budgets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Report how close the site is to GitHub Pages' limit
         run: |
           mb=$(du -sm media | cut -f1)
@@ -25,7 +25,7 @@ jobs:
     name: Lighthouse (performance, accessibility, SEO)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - name: Serve the site and audit the landing page and the gallery
