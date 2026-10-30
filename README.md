@@ -213,9 +213,13 @@ Categories, albums and each photo's `featured` flag live in `photos.json`. Chang
 Everything below is optional and doesn't change how the site works on Pages today. The runbook is [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 - **Docker:** `docker compose up --build` serves the site from nginx at http://localhost:8080 (health check at `/healthz`). `docker compose run --rm --build e2e` runs the browser tests in `e2e/` against that container. They were written before the latest design changes and haven't been re-run since, so if one fails it probably needs its selector updated.
-- **CI** (`.github/workflows/`): `ci.yml` runs the site tests, builds the image and smoke-tests it, and validates Terraform and the Kubernetes manifests. `pages.yml` can deploy Pages from Actions (inactive until you set the repository variable `PAGES_VIA_ACTIONS=true`). `docker.yml` publishes the image to GHCR when you push a `v*` tag.
+- **CI** (`.github/workflows/`, with Dependabot keeping actions, Docker and Terraform current):
+  - `ci.yml`: site tests, a syntax check of every script, HTML validation, an image build with a smoke test, and Terraform and Kubernetes validation.
+  - `quality.yml`: a Lighthouse audit (accessibility is a hard gate; SEO and best practices warn) and a size report against GitHub Pages' limit.
+  - `security.yml`: secret scanning over the whole git history (gitleaks), CodeQL code scanning, and a vulnerability scan of the container image (Trivy); also runs weekly.
+  - `pages.yml` can deploy Pages from Actions (inactive until you set the repository variable `PAGES_VIA_ACTIONS=true`), and `docker.yml` publishes the image to GHCR when you push a `v*` tag.
 - **Kubernetes and Terraform:** `k8s/` and `infra/terraform/` are ready for hosting without Pages' size limit. They have never been applied to a real cluster; CI only checks that they are well formed.
-- **Tests:** `node --test test/` in this folder needs no install and checks the published data (every file exists, ids and albums line up, no precise coordinates, mood search logic). `npm test` from the project root runs the admin's suite (metadata, derivatives, watermark, dedupe, video, location privacy, telemetry, visual facts).
+- **Tests:** `node --test test/` in this folder needs no install and checks the published data (every file exists, ids and albums line up, no precise coordinates), the mood-search logic, accessibility basics, performance budgets (script, style and thumbnail sizes), that no secret or private path can ship, and that the Dockerfile, nginx, Kubernetes and the workflows agree with each other. `npm test` from the project root runs the admin's suite (metadata, derivatives, watermark, dedupe, video, location privacy, telemetry, visual facts).
 
 ## Notes and known limits
 

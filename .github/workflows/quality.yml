@@ -1,0 +1,36 @@
+# Quality gates for the live site: markup, accessibility, performance and links, run against the real files.
+name: Quality
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budgets:
+    name: Size budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report how close the site is to GitHub Pages' limit
+        run: |
+          mb=$(du -sm media | cut -f1)
+          echo "### Site size" >> "$GITHUB_STEP_SUMMARY"
+          echo "media/ is **${mb} MB**. GitHub Pages sites should stay under about 1000 MB." >> "$GITHUB_STEP_SUMMARY"
+          [ "$mb" -lt 1000 ] || echo "::warning title=Over the Pages size limit::media/ is ${mb} MB. Cap derivatives.full.size and derivatives.download.size, or host the container instead."
+
+  lighthouse:
+    name: Lighthouse (performance, accessibility, SEO)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Serve the site and audit the landing page and the gallery
+        run: |
+          npx --yes http-server -p 4173 -s . &
+          for i in $(seq 20); do curl -fs localhost:4173/ >/dev/null && break; sleep 1; done
+          npx --yes @lhci/cli@0.14.0 collect --url=http://localhost:4173/ --url='http://localhost:4173/#/gallery' --numberOfRuns=1 --settings.preset=desktop
+          npx --yes @lhci/cli@0.14.0 assert --assertions.categories:accessibility=error --assertions.categories:seo=warn --assertions.categories:best-practices=warn
