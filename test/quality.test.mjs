@@ -94,3 +94,7 @@ test('workflows: pinned actions, least-privilege permissions, and no secrets ech
     for (const m of t.matchAll(/uses:\s*([\w./-]+)@([\w.-]+)/g)) assert.match(m[2], /^(v\d|[0-9a-f]{40}|\d)/, `${f}: ${m[1]} is not pinned to a version`);
   }
 });
+
+test('index.html: inline data URIs contain no raw spaces (the HTML validator rejects them)', () => {
+  for (const m of html.matchAll(/href="(data:[^"]*)"/g)) assert.ok(!/\s/.test(m[1]), `a data: link has a raw space: ${m[1].slice(0, 60)}`);
+});
